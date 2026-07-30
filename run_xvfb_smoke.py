@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+import importlib.util
 import os, sys, time, json
 from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 os.chdir(ROOT)
 sys.path.insert(0, str(ROOT))
+_spec = importlib.util.spec_from_file_location("_project_init", ROOT / "__init__.py")
+if _spec and _spec.loader:
+    _mod = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_mod)
 for k in ("http_proxy","https_proxy","HTTP_PROXY","HTTPS_PROXY","ALL_PROXY","all_proxy"):
     os.environ.pop(k, None)
 print(f"[env] DISPLAY={os.environ.get('DISPLAY')!r}", flush=True)

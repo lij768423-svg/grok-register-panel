@@ -24,7 +24,7 @@ Based on [AaronL725/grok-register](https://github.com/AaronL725/grok-register) (
 | 能力 | 说明 |
 |------|------|
 | 注册全链路 | 邮箱 OTP → 资料页 → Turnstile → SSO → Device / OAuth → 写入 CPA / Grok2API |
-| 多邮箱后端 | Cloudflare Worker 邮、DuckMail、YYDS、MailNest、CloudMail 等 |
+| 多邮箱后端 | Cloudflare Worker 邮、DuckMail、YYDS、MailNest、CloudMail、**MoeMail** 等 |
 | 反检测浏览器 | [Camoufox](https://camoufox.com/)（Gecko 层指纹） |
 | 出口预检 | 启动前解析出口 IP / ASN，命中黑名单直接换口 |
 | 风控早停 | `botFlagSource=1` + `policy=deny` 时跳过后续 OAuth，避免无效重试 |
@@ -84,9 +84,13 @@ cp config.example.json config.json
 
 | 字段 | 说明 |
 |------|------|
-| `email_provider` | `cloudflare` / `duckmail` / `yyds` / `mailnest` / … |
-| `defaultDomains` | 临时邮域名（如二级 CF 域） |
-| `cloudflare_*` / `duckmail_*` 等 | 对应邮箱 API |
+| `email_provider` | `cloudflare` / `duckmail` / `yyds` / `mailnest` / `cloudmail` / `moemail` |
+| `defaultDomains` | 临时邮域名（CF / CloudMail / MoeMail 可选回落） |
+| `cloudflare_*` / `duckmail_*` / `moemail_*` 等 | 对应邮箱 API |
+| `moemail_api_base` | MoeMail 站点根（可写 `https://host` 或 `https://host/api`，代码会规范化） |
+| `moemail_api_key` | MoeMail `X-API-Key` |
+| `moemail_domain` | 可选固定域名；空则用 `defaultDomains` 或 `/api/config` 的 `emailDomains` |
+| `moemail_expiry_ms` | 邮箱有效期毫秒：`3600000`=1h / `86400000`=1d / `0`=永久 |
 | `proxy` | 默认 HTTP 代理，如 `http://127.0.0.1:7890` |
 | `proxies.txt` | 可选；多行代理，多 worker 轮换端口 |
 | `register_workers` | 并发浏览器数（建议先 2～3） |
@@ -97,6 +101,13 @@ cp config.example.json config.json
 | `cpa_remote_url` / `cpa_management_key` | 远程 CPA Management API（可选） |
 
 ### 环境变量
+
+入口脚本会通过根目录 [`__init__.py`](__init__.py) **自动加载** 项目根目录的 `.env`（不覆盖已 `export` 的变量）。`.env` 已在 `.gitignore`。
+
+```bash
+cp .env.example .env
+# 编辑 .env 填写 MONITOR_TOKEN 等
+```
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
@@ -119,12 +130,9 @@ python3 -c "import secrets; print(secrets.token_urlsafe(24))"
 **A. Web 面板（推荐）**
 
 ```bash
-export MONITOR_TOKEN='你的长随机串'   # 必设，否则点启动会 401
-export MONITOR_HOST=127.0.0.1         # 仅本机；局域网请改成具体网卡 IP
-export MONITOR_PORT=8787
-export CPA_AUTH_DIR=./cpa_auth
-# 可选：需要页面里看原始日志尾时
-# export PANEL_INCLUDE_TAIL=1
+cp .env.example .env
+# 编辑 .env：MONITOR_TOKEN=你的长随机串 等
+# 也可继续用 export（优先级高于 .env）
 
 python webui/monitor.py
 # 浏览器打开 http://127.0.0.1:8787/
@@ -222,6 +230,8 @@ python grok_register_ttk.py
 
 ```text
 .
+├── __init__.py                # 根包：自动 load 根目录 .env
+├── .env.example               # 环境变量模板（复制为 .env）
 ├── grok_register_ttk.py       # GUI + CLI 主程序
 ├── register_flow.py           # 注册页流程 / Turnstile
 ├── browser_session.py         # 会话、出口探测、ASN 黑名单
@@ -258,7 +268,7 @@ python3 tests/test_batch_chdir_import.py
 ## 常见问题
 
 **Q: 点启动报 `unauthorized: set MONITOR_TOKEN...`？**  
-A: 服务端已启用写接口鉴权。启动 monitor 时 `export MONITOR_TOKEN=...`，浏览器 **面板 Token** 填同一串（或 `localStorage.setItem`）。硬刷新后再点启动。
+A: 服务端已启用写接口鉴权。在根目录 `.env` 写 `MONITOR_TOKEN=...`（或 `export`），浏览器 **面板 Token** 填同一串（或 `localStorage.setItem`）。硬刷新后再点启动。
 
 **Q: 日志尾部显示 `raw log tail disabled`？**  
 A: 默认关闭防泄密。需要时 `export PANEL_INCLUDE_TAIL=1` 后重启 `monitor.py`。
@@ -283,9 +293,9 @@ A: 看 `log/orch100-stdout.log` 与最新 `log/batch-*.log`；欢迎提 issue / 
 
 ## 安全
 
-- **必须**设置 `MONITOR_TOKEN`；不要把 token 提交进仓库或贴进公开 issue  
-- **不要提交** `config.json`、`accounts/`、`cpa_auth/`、`proxies.txt`、真实 stickies、`log/monitor.token`  
-- `.gitignore` 已忽略上述路径  
+- **必须**设置 `MONITOR_TOKEN`（推荐写在根目录 `.env`）；不要把 token 提交进仓库或贴进公开 issue  
+- **不要提交** `config.json`、`.env`、`accounts/`、`cpa_auth/`、`proxies.txt`、真实 stickies、`log/monitor.token`  
+- `.gitignore` 已忽略上述路径（含 `.env`）  
 - 代理凭据与邮箱在结果 JSONL / 控制台走 `redact_proxy` / `mask_email`  
 - 新写 auth 文件权限 0600、父目录 0700（`sso_to_auth_json`）  
 - 开源前自查：`grep -R api_key --include='*.json' .`（勿提交真实配置）  

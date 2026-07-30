@@ -33,5 +33,9 @@
   "yyds_jwt": "",
   "yyds_default_domain": "",
   "mailnest_api_key": "",
-  "mailnest_project_code": "x-ai001"
+  "mailnest_project_code": "x-ai001",
+  "moemail_api_base": "https://your-moemail-instance",
+  "moemail_api_key": "",
+  "moemail_domain": "",
+  "moemail_expiry_ms": 3600000
 }

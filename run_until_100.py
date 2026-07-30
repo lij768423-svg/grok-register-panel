@@ -2,6 +2,7 @@
 """Orch: run batches until CPA target. Workers/risk pause from monitor_control.json."""
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
@@ -13,14 +14,20 @@ from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-AUTHS = Path(__import__("os").environ.get("CPA_AUTH_DIR", str(ROOT / "cpa_auth")))
+# 加载根目录 __init__.py → 自动读 .env（须在读取 os.environ 之前）
+_spec = importlib.util.spec_from_file_location("_project_init", ROOT / "__init__.py")
+if _spec and _spec.loader:
+    _mod = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_mod)
+
+AUTHS = Path(os.environ.get("CPA_AUTH_DIR", str(ROOT / "cpa_auth")))
 BS = ROOT / "browser_session.py"
 LOG_DIR = ROOT / "log"
 RESULTS = LOG_DIR / "register_results.jsonl"
 ORCH_LOG = LOG_DIR / f"orch100-fixed-{time.strftime('%Y%m%d-%H%M%S')}.log"
 WORKERS = 3
-BASE0 = int(__import__("os").environ.get("ORCH_BASE_CPA", "0") or 0)
-TARGET_CPA = BASE0 + int(__import__("os").environ.get("ORCH_ADD_COUNT", "100") or 100)
+BASE0 = int(os.environ.get("ORCH_BASE_CPA", "0") or 0)
+TARGET_CPA = BASE0 + int(os.environ.get("ORCH_ADD_COUNT", "100") or 100)
 RISK_PAUSE = 10
 MAX_ROUNDS = 60
 CONTROL_FILE = LOG_DIR / "monitor_control.json"

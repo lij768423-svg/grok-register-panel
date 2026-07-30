@@ -2,15 +2,26 @@
 """Grok register batch live monitor — bind Tailscale, control + blacklist panel."""
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
 import signal
 import subprocess
+import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+# 加载根目录 __init__.py → 自动读 .env（须在读取 os.environ 之前）
+_spec = importlib.util.spec_from_file_location("_project_init", ROOT / "__init__.py")
+if _spec and _spec.loader:
+    _mod = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_mod)
 
 try:
     from webui.security_utils import (
@@ -27,7 +38,6 @@ except ImportError:  # running as script from webui/
         redact_proxy,
     )
 
-ROOT = Path(__file__).resolve().parent.parent
 LOG_DIR = ROOT / "log"
 CPA_DIR = Path(os.environ.get("CPA_AUTH_DIR", str(ROOT / "cpa_auth")))
 BS = ROOT / "browser_session.py"

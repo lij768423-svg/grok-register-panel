@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import importlib.util
 import os
+import sys
 
-os.chdir(str(Path(__file__).resolve().parent))
+_ROOT = Path(__file__).resolve().parent
+os.chdir(str(_ROOT))
+sys.path.insert(0, str(_ROOT))
 
-import sys, types, os
-sys.path.insert(0, ".")
+# 加载根目录 __init__.py → 自动读 .env（不覆盖已有环境变量）
+_spec = importlib.util.spec_from_file_location("_project_init", _ROOT / "__init__.py")
+if _spec and _spec.loader:
+    _mod = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_mod)
+
+import types
 # stub tkinter for headless server
 try:
     import tkinter

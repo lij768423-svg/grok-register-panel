@@ -199,6 +199,46 @@ def check_email_api(provider: str, config: dict, http_get: Callable, http_post: 
             resp = http_get(url, timeout=10)
             return "邮箱API", resp.status_code < 400, f"CloudMail HTTP {resp.status_code}"
 
+        if provider == "moemail":
+            from email_providers import moemail as moemail_provider
+
+            raw_base = (
+                config.get("moemail_api_base")
+                or config.get("moemail_api_url")
+                or ""
+            )
+            base = moemail_provider.normalize_base(str(raw_base))
+            key = str(
+                config.get("moemail_api_key")
+                or ""
+            ).strip()
+            if not base:
+                return "邮箱API", False, "未配置 moemail_api_base"
+            if not key:
+                return "邮箱API", False, "未配置 moemail_api_key"
+            # GET /api/config 用 X-API-Key 校验
+            url = f"{base}/api/config"
+            resp = http_get(
+                url,
+                headers={"Accept": "application/json", "X-API-Key": key},
+                timeout=12,
+            )
+            if resp.status_code in (401, 403):
+                return "邮箱API", False, f"MoeMail API Key 无效 HTTP {resp.status_code}"
+            if resp.status_code >= 400:
+                return "邮箱API", False, f"MoeMail HTTP {resp.status_code}"
+            try:
+                data = resp.json()
+                domains = ""
+                if isinstance(data, dict):
+                    domains = str(data.get("emailDomains") or data.get("email_domains") or "")
+                detail = f"MoeMail 可达 HTTP {resp.status_code}"
+                if domains:
+                    detail += f"；域名 {domains[:80]}"
+                return "邮箱API", True, detail
+            except Exception:
+                return "邮箱API", True, f"MoeMail 可达 HTTP {resp.status_code}"
+
         return "邮箱API", True, f"提供商 {provider} 跳过深度探测"
     except Exception as exc:
         return "邮箱API", False, str(exc)

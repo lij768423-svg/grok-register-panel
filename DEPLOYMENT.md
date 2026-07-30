@@ -61,6 +61,7 @@ cp config.example.json config.json
 - Cloudflare：`cloudflare_api_base`、`defaultDomains`，必要时填写认证配置
 - DuckMail：将 `email_provider` 改为 `duckmail` 并填写 `duckmail_api_key`
 - YYDS：将 `email_provider` 改为 `yyds` 并填写 `yyds_api_key` 或 `yyds_jwt`
+- MoeMail：将 `email_provider` 改为 `moemail`，填写 `moemail_api_base`（站点根 URL）与 `moemail_api_key`；可选 `moemail_domain` / `moemail_expiry_ms`（兼容旧字段 `moemail_api_url`）
 
 如需自动写入 CLIProxyAPI，再配置 `cpa_auto_add` 及本地 auth 目录或远程 Management API 参数。
 
