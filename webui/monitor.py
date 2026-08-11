@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from secure_files import atomic_write_json, ensure_private_dir
+from secure_files import atomic_write_json, best_effort_fchmod, ensure_private_dir
 from batch_traffic import read_metrics as read_batch_traffic
 from runtime_platform import (
     batch_launch_command,
@@ -716,10 +716,7 @@ def _start_orch_unlocked():
     ensure_private_dir(LOG_DIR)
     stdout_path = LOG_DIR / "orch100-stdout.log"
     fd = os.open(stdout_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-    try:
-        os.fchmod(fd, 0o600)
-    except OSError:
-        pass
+    best_effort_fchmod(fd, 0o600)
     stdout = os.fdopen(fd, "a", encoding="utf-8")
     stdout.write(
         f"\n--- monitor start {time.strftime('%Y-%m-%dT%H:%M:%SZ')} "
@@ -777,10 +774,7 @@ def _start_batch_only_unlocked():
     logname = LOG_DIR / f"batch-orch-{time.strftime('%Y%m%d-%H%M%S')}-n{count}.log"
     ensure_private_dir(LOG_DIR)
     fd = os.open(logname, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    try:
-        os.fchmod(fd, 0o600)
-    except OSError:
-        pass
+    best_effort_fchmod(fd, 0o600)
     fout = os.fdopen(fd, "w", encoding="utf-8")
     try:
         p = subprocess.Popen(

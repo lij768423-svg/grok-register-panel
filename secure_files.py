@@ -29,7 +29,7 @@ _THREAD_LOCKS_GUARD = threading.Lock()
 _LOCK_CHUNK = 1
 
 
-def _fchmod(fd: int, mode: int) -> None:
+def best_effort_fchmod(fd: int, mode: int) -> None:
     """Best-effort fchmod; missing on Windows."""
     fn = getattr(os, "fchmod", None)
     if fn is None:
@@ -74,7 +74,7 @@ def append_private_text(
         PRIVATE_FILE_MODE,
     )
     try:
-        _fchmod(fd, PRIVATE_FILE_MODE)
+        best_effort_fchmod(fd, PRIVATE_FILE_MODE)
         with os.fdopen(fd, "a", encoding=encoding, newline="\n") as handle:
             fd = -1
             handle.write(text)
@@ -99,7 +99,7 @@ def create_private_text(
         PRIVATE_FILE_MODE,
     )
     try:
-        _fchmod(fd, PRIVATE_FILE_MODE)
+        best_effort_fchmod(fd, PRIVATE_FILE_MODE)
         with os.fdopen(fd, "w", encoding=encoding, newline="\n") as handle:
             fd = -1
             handle.write(text)
@@ -125,7 +125,7 @@ def atomic_write_text(
     )
     temp_path = Path(temp_name)
     try:
-        _fchmod(fd, PRIVATE_FILE_MODE)
+        best_effort_fchmod(fd, PRIVATE_FILE_MODE)
         with os.fdopen(fd, "w", encoding=encoding, newline="\n") as handle:
             fd = -1
             handle.write(text)
@@ -210,7 +210,7 @@ def exclusive_file_lock(path: str | os.PathLike[str]) -> Iterator[None]:
             PRIVATE_FILE_MODE,
         )
         try:
-            _fchmod(fd, PRIVATE_FILE_MODE)
+            best_effort_fchmod(fd, PRIVATE_FILE_MODE)
             _acquire_os_lock(fd)
             yield
         finally:

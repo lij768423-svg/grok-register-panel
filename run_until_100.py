@@ -13,7 +13,7 @@ from pathlib import Path
 
 from runtime_platform import batch_launch_command, popen_group_kwargs, runtime_python
 from retry_policy import PRECHECK_EXIT_CODE, orchestrator_failure_limit
-from secure_files import append_private_text, ensure_private_dir
+from secure_files import append_private_text, best_effort_fchmod, ensure_private_dir
 from webui.blacklist_store import add_asn as add_blacklist_asn
 from webui.blacklist_store import read_blacklist
 from webui.process_utils import (
@@ -103,10 +103,7 @@ def kill_batch() -> None:
 def start_batch(count: int):
     logname = LOG_DIR / f"batch-orch-{time.strftime('%Y%m%d-%H%M%S')}-n{count}.log"
     fd = os.open(logname, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    try:
-        os.fchmod(fd, 0o600)
-    except OSError:
-        pass
+    best_effort_fchmod(fd, 0o600)
     fout = os.fdopen(fd, "w", encoding="utf-8")
     try:
         proc = subprocess.Popen(

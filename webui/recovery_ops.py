@@ -16,14 +16,14 @@ if str(ROOT) not in sys.path:
 from runtime_platform import popen_group_kwargs, runtime_python
 
 try:
-    from secure_files import ensure_private_dir, exclusive_file_lock
+    from secure_files import best_effort_fchmod, ensure_private_dir, exclusive_file_lock
     from webui.process_utils import (
         find_managed_processes,
         terminate_managed_processes,
         write_pid_file,
     )
 except ImportError:  # running from webui/
-    from secure_files import ensure_private_dir, exclusive_file_lock
+    from secure_files import best_effort_fchmod, ensure_private_dir, exclusive_file_lock
     from process_utils import (  # type: ignore
         find_managed_processes,
         terminate_managed_processes,
@@ -192,10 +192,7 @@ def start_recovery(scope: str = "pending") -> dict:
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     log_path = LOG_DIR / f"recovery-{timestamp}-{normalized_scope}.log"
     fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    try:
-        os.fchmod(fd, 0o600)
-    except OSError:
-        pass
+    best_effort_fchmod(fd, 0o600)
     output = os.fdopen(fd, "w", encoding="utf-8")
     command = [
         str(VENV_PY),
