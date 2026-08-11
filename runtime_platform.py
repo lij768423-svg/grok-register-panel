@@ -55,7 +55,10 @@ def runtime_python(
         configured_path = Path(configured).expanduser()
         if not configured_path.is_absolute():
             configured_path = project_root / configured_path
-        return configured_path.resolve()
+        # Keep the configured executable path itself. Resolving a venv's
+        # ``bin/python`` symlink selects the base interpreter and drops the
+        # virtual environment's site-packages.
+        return Path(os.path.abspath(configured_path))
 
     project_python = (
         project_root / ".venv" / "Scripts" / "python.exe"

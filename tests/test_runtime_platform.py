@@ -73,6 +73,25 @@ def test_runtime_python_supports_explicit_override():
         ) == configured.resolve()
 
 
+def test_runtime_python_preserves_virtualenv_symlink_override():
+    with tempfile.TemporaryDirectory() as temp:
+        root = Path(temp)
+        base_python = _touch(root / "base" / "python")
+        venv_python = root / "shared-venv" / "bin" / "python"
+        venv_python.parent.mkdir(parents=True)
+        venv_python.symlink_to(base_python)
+
+        selected = runtime_python(
+            root,
+            platform_name="linux",
+            environ={"GROK_PYTHON_BIN": str(venv_python)},
+            current_executable=root / "unused" / "python",
+        )
+
+        assert selected == venv_python
+        assert selected != base_python.resolve()
+
+
 def test_linux_headless_launch_uses_xvfb_automatically():
     with tempfile.TemporaryDirectory() as temp:
         root = Path(temp)
@@ -206,6 +225,7 @@ if __name__ == "__main__":
     test_runtime_python_uses_platform_virtualenv_layout()
     test_runtime_python_falls_back_to_active_interpreter()
     test_runtime_python_supports_explicit_override()
+    test_runtime_python_preserves_virtualenv_symlink_override()
     test_linux_headless_launch_uses_xvfb_automatically()
     test_linux_display_and_disabled_mode_launch_directly()
     test_missing_xvfb_returns_actionable_error()
