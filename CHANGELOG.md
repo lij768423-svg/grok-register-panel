@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.4.1 - 2026-08-11
+
+### Fixed
+
+- Fix Windows state, progress, proxy, email, panel, orchestrator, and recovery file writes when `os.fchmod` is unavailable; use `msvcrt` byte-range locks for cross-process state protection.
+- Add `GROK_HEADLESS` / `GROK_HEADED` controls and software-rendering preferences for Windows sessions where headed Camoufox GPU processes fail.
+- Preserve configured virtual-environment Python symlink paths so panel-launched jobs keep their installed dependencies.
+- Ship `tzdata` in both direct and locked dependency manifests for Windows Beijing-time support.
+
 ## 0.4.0 - 2026-08-11
 
 ### Added
