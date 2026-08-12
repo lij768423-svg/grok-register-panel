@@ -924,7 +924,7 @@ def _append_sso_bfs_flagged(email: str, sso: str, details: str, log_callback=Non
 
 
 def _registration_risk_should_block(state: dict) -> tuple:
-    """是否跳过 OAuth/入库。
+    """是否隔离当前 SSO，阻止其进入正常账号池和后续 OAuth。
 
     升级后额外拦住：
       - botFlagSource in (1, 2)（含 IP farm soft-flag / castle 等）
@@ -954,21 +954,14 @@ def _registration_risk_should_block(state: dict) -> tuple:
 
 
 def ensure_sso_oauth_eligible(raw_token, email="", log_callback=None) -> dict:
-    """检查新账号是否被注册风控拒绝；无法判定时继续原有 OAuth 路径。"""
-    if not config.get("cpa_auto_add", False):
-        return {}
-    if not any(
-        str(config.get(key, "") or "").strip()
-        for key in ("cpa_auth_dir", "cpa_remote_url", "grok2api_auth_dir")
-    ):
-        return {}
+    """检查新账号风控状态；命中时保存 SSO 到隔离文件并终止正常入库。"""
     sso = _normalize_sso_token(raw_token)
     if not sso:
         raise RegistrationRiskDenied("注册风控检查失败: sso 为空")
 
     def _risk_log(message):
         if log_callback:
-            log_callback(f"[CPA] {str(message).strip()}")
+            log_callback(f"[风控] {str(message).strip()}")
 
     _risk_log("检查新账号注册风控状态 ...")
     state = _s2cpa.inspect_sso_account_state(

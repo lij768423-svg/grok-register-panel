@@ -55,6 +55,27 @@ def test_queue_dedup_and_consume():
             assert stat.S_IMODE(queue.stat().st_mode) == 0o600
 
 
+def test_account_scan_excludes_quarantined_risk_sso():
+    with tempfile.TemporaryDirectory() as temp:
+        root = Path(temp)
+        accounts = root / "accounts"
+        accounts.mkdir()
+        normal = "n" * 80
+        quarantined = "q" * 80
+        (accounts / "normal@example.test.txt").write_text(
+            f"normal@example.test----password----{normal}\n",
+            encoding="utf-8",
+        )
+        (accounts / "sso_risk_rejected.txt").write_text(
+            f"risk@example.test----{quarantined}----botFlagSource=2\n",
+            encoding="utf-8",
+        )
+
+        records = load_sso_records(accounts_dir=str(accounts))
+
+    assert [record.sso for record in records] == [normal]
+
+
 def test_cpa_only_batch_does_not_create_auth_out():
     args = SimpleNamespace(
         out=None,
@@ -115,6 +136,7 @@ def test_bfs_config_defaults_are_loaded_for_cli():
 if __name__ == "__main__":
     test_parser_preserves_email_and_password()
     test_queue_dedup_and_consume()
+    test_account_scan_excludes_quarantined_risk_sso()
     test_cpa_only_batch_does_not_create_auth_out()
     test_existing_cpa_email_detection()
     test_bfs_config_defaults_are_loaded_for_cli()
