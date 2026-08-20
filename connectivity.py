@@ -293,6 +293,29 @@ def check_email_api(provider: str, config: dict, http_get: Callable, http_post: 
                 ok = False
             return "邮箱API", ok, detail[:300]
 
+        if provider == "cf_outlook":
+            from email_providers import cf_outlook as cf_outlook_provider
+
+            base = cf_outlook_provider.normalize_base(
+                str(config.get("cf_outlook_api_base") or "")
+            )
+            key = str(config.get("cf_outlook_api_key") or "").strip()
+            inventory = str(config.get("cf_outlook_inventory") or "").strip()
+            if not base:
+                return "邮箱API", False, "未配置 cf_outlook_api_base"
+            if not key:
+                return "邮箱API", False, "未配置 cf_outlook_api_key"
+            if not inventory:
+                return "邮箱API", False, "未配置 cf_outlook_inventory"
+            candidate = cf_outlook_provider.first_available_email(
+                inventory,
+                str(config.get("cf_outlook_used_path") or ""),
+            )
+            if not candidate:
+                return "邮箱API", False, "cf_outlook 邮箱库存已耗尽"
+            detail = cf_outlook_provider.probe_api(http_get, base, key, candidate)
+            return "邮箱API", True, detail
+
         return "邮箱API", True, f"提供商 {provider} 跳过深度探测"
     except Exception as exc:
         return "邮箱API", False, redact_log_line(str(exc))

@@ -55,9 +55,15 @@ def test_provider_schema_and_defaults():
             "cloudmail",
             "moemail",
             "outlook_rt",
+            "cf_outlook",
             "inbucket",
         }
         assert providers["outlook_rt"]["configured"] is False
+        assert providers["cf_outlook"]["configured"] is False
+        assert any(
+            field["name"] == "cf_outlook_api_key" and field["secret"] is True
+            for field in providers["cf_outlook"]["fields"]
+        )
         assert any(
             field["name"] == "outlook_rt_inventory"
             for field in providers["outlook_rt"]["fields"]
@@ -313,6 +319,32 @@ def test_inbucket_requires_base_and_domain():
         )
 
 
+def test_cf_outlook_schema_and_secret_preservation():
+    with IsolatedConfig() as config_path:
+        with tempfile.TemporaryDirectory() as tmp:
+            inventory = Path(tmp) / "mailboxes.txt"
+            inventory.write_text("mailbox@example.test\n", encoding="utf-8")
+            saved = email_provider_store.save_email_provider_config(
+                "cf_outlook",
+                {
+                    "cf_outlook_api_base": "https://mail.example.com/",
+                    "cf_outlook_api_key": "test-api-key",
+                    "cf_outlook_inventory": str(inventory),
+                },
+            )
+            assert saved["configured"] is True
+            assert saved["values"]["cf_outlook_api_key"] == ""
+            assert saved["secret_configured"]["cf_outlook_api_key"] is True
+            raw = json.loads(config_path.read_text(encoding="utf-8"))
+            assert raw["cf_outlook_api_key"] == "test-api-key"
+            email_provider_store.save_email_provider_config(
+                "cf_outlook",
+                {"cf_outlook_api_key": ""},
+            )
+            preserved = json.loads(config_path.read_text(encoding="utf-8"))
+            assert preserved["cf_outlook_api_key"] == "test-api-key"
+
+
 if __name__ == "__main__":
     test_provider_schema_and_defaults()
     test_secret_masking_preservation_clear_and_private_file()
@@ -322,4 +354,5 @@ if __name__ == "__main__":
     test_cloudflare_direct_create_does_not_probe_admin_domains()
     test_cloudflare_admin_create_does_not_probe_mailbox_domains()
     test_inbucket_requires_base_and_domain()
+    test_cf_outlook_schema_and_secret_preservation()
     print("OK email provider store")

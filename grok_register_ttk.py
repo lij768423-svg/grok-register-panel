@@ -34,6 +34,7 @@ import requests as _std_requests
 import sso_to_auth_json as _s2cpa
 from email_providers import cloudflare as cloudflare_provider
 from email_providers import cloudmail as cloudmail_provider
+from email_providers import cf_outlook as cf_outlook_provider
 from email_providers import duckmail as duckmail_provider
 from email_providers import inbucket as inbucket_provider
 from email_providers import mailnest as mailnest_provider
@@ -201,6 +202,11 @@ DEFAULT_CONFIG = {
     "cloudmail_url": "",
     "cloudmail_admin_email": "",
     "cloudmail_password": "",
+    # cf-outlook-email：本地邮箱库存 + 外部邮件查询 API
+    "cf_outlook_api_base": "",
+    "cf_outlook_api_key": "",
+    "cf_outlook_inventory": "",
+    "cf_outlook_used_path": "",
     "cloudflare_api_base": "",
     "cloudflare_api_key": "",
     "cloudflare_auth_mode": "none",
@@ -1907,6 +1913,8 @@ def get_email_and_token(api_key=None):
         return inbucket_get_email_and_token(domain=managed_domain)
     if provider == "outlook_rt":
         return outlook_rt_take_mailbox()
+    if provider == "cf_outlook":
+        return cf_outlook_take_mailbox()
     return duckmail_provider.create_mailbox(
         http_get,
         http_post,
@@ -1928,6 +1936,54 @@ def get_outlook_rt_client_id():
     return (
         str(config.get("outlook_rt_client_id", "") or "").strip()
         or outlook_rt_provider.DEFAULT_CLIENT_ID
+    )
+
+
+def get_cf_outlook_api_base():
+    return cf_outlook_provider.normalize_base(
+        str(config.get("cf_outlook_api_base", "") or "")
+    )
+
+
+def get_cf_outlook_api_key():
+    return str(config.get("cf_outlook_api_key", "") or "").strip()
+
+
+def get_cf_outlook_inventory():
+    return str(config.get("cf_outlook_inventory", "") or "").strip()
+
+
+def get_cf_outlook_used_path():
+    return str(config.get("cf_outlook_used_path", "") or "").strip()
+
+
+def cf_outlook_take_mailbox():
+    return cf_outlook_provider.take_mailbox(
+        get_cf_outlook_inventory(),
+        used_path=get_cf_outlook_used_path(),
+    )
+
+
+def cf_outlook_get_code(
+    token_key,
+    email,
+    timeout=180,
+    poll_interval=4,
+    log_callback=None,
+    cancel_callback=None,
+):
+    return cf_outlook_provider.wait_for_code(
+        http_get,
+        get_cf_outlook_api_base(),
+        get_cf_outlook_api_key(),
+        token_key,
+        email,
+        timeout=timeout,
+        poll_interval=poll_interval,
+        raise_if_cancelled=raise_if_cancelled,
+        sleep_with_cancel=sleep_with_cancel,
+        log_callback=log_callback,
+        cancel_callback=cancel_callback,
     )
 
 
@@ -2049,6 +2105,15 @@ def get_oai_code(
         )
     if provider == "outlook_rt":
         return outlook_rt_get_code(
+            dev_token,
+            email,
+            timeout=timeout,
+            poll_interval=max(3, int(poll_interval or 4)),
+            log_callback=log_callback,
+            cancel_callback=cancel_callback,
+        )
+    if provider == "cf_outlook":
+        return cf_outlook_get_code(
             dev_token,
             email,
             timeout=timeout,
@@ -2767,6 +2832,7 @@ class GrokRegisterGUI:
                 "cloudmail",
                 "moemail",
                 "outlook_rt",
+                "cf_outlook",
             ],
             width=12,
         )
@@ -3084,6 +3150,54 @@ class GrokRegisterGUI:
             ),
         ]
 
+        # cf-outlook-email：已有 Outlook 邮箱库存 + API Key
+        self.cf_outlook_api_base_var = tk.StringVar(
+            value=str(config.get("cf_outlook_api_base", "") or "")
+        )
+        self.cf_outlook_api_key_var = tk.StringVar(
+            value=str(config.get("cf_outlook_api_key", "") or "")
+        )
+        self.cf_outlook_inventory_var = tk.StringVar(
+            value=str(config.get("cf_outlook_inventory", "") or "")
+        )
+        self.cf_outlook_used_path_var = tk.StringVar(
+            value=str(config.get("cf_outlook_used_path", "") or "")
+        )
+        self._cf_outlook_widgets = [
+            p_label(0, 0, "站点 URL:"),
+            p_field(
+                tk_entry(self.provider_frame, textvariable=self.cf_outlook_api_base_var, width=52),
+                0,
+                1,
+                columnspan=3,
+            ),
+            p_label(1, 0, "API Key:"),
+            p_field(
+                tk_entry(self.provider_frame, textvariable=self.cf_outlook_api_key_var, width=34, show="*"),
+                1,
+                1,
+            ),
+            p_label(1, 2, "邮箱库存:"),
+            p_field(
+                tk_entry(self.provider_frame, textvariable=self.cf_outlook_inventory_var, width=34),
+                1,
+                3,
+            ),
+            p_label(2, 0, "已用记录（可选）:"),
+            p_field(
+                tk_entry(self.provider_frame, textvariable=self.cf_outlook_used_path_var, width=34),
+                2,
+                1,
+            ),
+            p_label(2, 2, "库存格式:"),
+            p_field(
+                tk_label(self.provider_frame, text="每行一个邮箱，或 JSONL 的 email 字段", bg=UI_PANEL_BG),
+                2,
+                3,
+                sticky=tk.W,
+            ),
+        ]
+
         self._provider_widget_groups = {
             "duckmail": self._duckmail_widgets,
             "cloudflare": self._cloudflare_widgets,
@@ -3092,6 +3206,7 @@ class GrokRegisterGUI:
             "cloudmail": self._cloudmail_widgets,
             "moemail": self._moemail_widgets,
             "outlook_rt": self._outlook_rt_widgets,
+            "cf_outlook": self._cf_outlook_widgets,
         }
 
         add_label(3, 0, "并发数（可选）:")
@@ -3269,6 +3384,7 @@ class GrokRegisterGUI:
             "cloudmail": "CloudMail 配置",
             "moemail": "MoeMail 配置",
             "outlook_rt": "Outlook RT 库存配置",
+            "cf_outlook": "cf-outlook 邮箱 API 配置",
         }
         self.provider_frame.configure(text=titles.get(provider, "邮箱服务商配置"))
         for widgets in self._provider_widget_groups.values():
@@ -3370,6 +3486,10 @@ class GrokRegisterGUI:
                 self.outlook_rt_client_id_var.get().strip()
                 or outlook_rt_provider.DEFAULT_CLIENT_ID
             )
+            config["cf_outlook_api_base"] = self.cf_outlook_api_base_var.get().strip()
+            config["cf_outlook_api_key"] = self.cf_outlook_api_key_var.get().strip()
+            config["cf_outlook_inventory"] = self.cf_outlook_inventory_var.get().strip()
+            config["cf_outlook_used_path"] = self.cf_outlook_used_path_var.get().strip()
             config["cpa_auto_add"] = bool(self.cpa_auto_add_var.get())
             _mode_text = str(self.cpa_token_mode_var.get()).strip()
             if "协议" in _mode_text:
@@ -3492,6 +3612,10 @@ class GrokRegisterGUI:
             self.outlook_rt_client_id_var.get().strip()
             or outlook_rt_provider.DEFAULT_CLIENT_ID
         )
+        config["cf_outlook_api_base"] = self.cf_outlook_api_base_var.get().strip()
+        config["cf_outlook_api_key"] = self.cf_outlook_api_key_var.get().strip()
+        config["cf_outlook_inventory"] = self.cf_outlook_inventory_var.get().strip()
+        config["cf_outlook_used_path"] = self.cf_outlook_used_path_var.get().strip()
         config["cpa_auto_add"] = bool(self.cpa_auto_add_var.get())
         _mode_text = str(self.cpa_token_mode_var.get()).strip()
         if "协议" in _mode_text:
@@ -3529,6 +3653,21 @@ class GrokRegisterGUI:
 
             if not _Path(inv).expanduser().is_file():
                 self.log(f"[!] Outlook RT 库存文件不存在: {inv}")
+                return
+        if config["email_provider"] == "cf_outlook":
+            missing = []
+            if not get_cf_outlook_api_base():
+                missing.append("cf_outlook 站点 URL")
+            if not get_cf_outlook_api_key():
+                missing.append("cf_outlook API Key")
+            inv = get_cf_outlook_inventory()
+            if not inv:
+                missing.append("cf_outlook 邮箱库存路径")
+            elif not Path(inv).expanduser().is_file():
+                self.log(f"[!] cf_outlook 邮箱库存文件不存在: {inv}")
+                return
+            if missing:
+                self.log(f"[!] cf_outlook 模式缺少配置: {', '.join(missing)}")
                 return
         if config["email_provider"] == "moemail":
             missing = []

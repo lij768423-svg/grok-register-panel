@@ -138,10 +138,14 @@ Windows 不要把 `PLAYWRIGHT_NODEJS_PATH` 指到 `scripts/playwright-node`（�
 
 | 字段 | 说明 |
 |------|------|
-| `email_provider` | `cloudflare` / `duckmail` / `yyds` / `mailnest` / `cloudmail` / `moemail` / `outlook_rt` / `inbucket` |
+| `email_provider` | `cloudflare` / `duckmail` / `yyds` / `mailnest` / `cloudmail` / `moemail` / `outlook_rt` / `cf_outlook` / `inbucket` |
 | `outlook_rt_inventory` | Outlook MSA 库存路径（jsonl：`email`+`refresh_token`；或 `email----rt`） |
 | `outlook_rt_used_path` | 已用邮箱记录（可选；默认 `库存路径.used`） |
 | `outlook_rt_client_id` | 可选 Client ID；默认 Microsoft Authentication Broker 公共客户端 |
+| `cf_outlook_api_base` | `cf-outlook-email` 站点根 URL，例如 `https://mail.example.com` |
+| `cf_outlook_api_key` | 对外 API Key；仅通过 `X-API-Key` 请求头发送 |
+| `cf_outlook_inventory` | 本地邮箱库存路径；每行一个邮箱，或 JSONL 的 `email` 字段 |
+| `cf_outlook_used_path` | 已用邮箱记录路径（可选；默认 `库存路径.used`） |
 | `defaultDomains` | 临时邮域名（如二级 CF 域） |
 | `cloudflare_*` / `duckmail_*` 等 | 对应邮箱 API |
 | `cloudflare_randomize_subdomain` | 默认 `true`；为管理域名生成随机子域，要求泛域收信；不支持时设为 `false` |
@@ -327,8 +331,9 @@ python grok_register_ttk.py
 
 ### 邮箱服务与高级域名轮换
 
-- 顶部“邮箱服务”统一配置 `cloudflare`、`duckmail`、`yyds`、`mailnest`、`cloudmail`、`moemail`、`outlook_rt`、`inbucket`
+- 顶部“邮箱服务”统一配置 `cloudflare`、`duckmail`、`yyds`、`mailnest`、`cloudmail`、`moemail`、`outlook_rt`、`cf_outlook`、`inbucket`
 - `outlook_rt` 从本地 jsonl 库存取号（非购买），用 MSA `refresh_token` 刷 Graph 收 xAI 验证码
+- `cf_outlook` 从本地邮箱库存取号（非购买），通过 `cf-outlook-email` 的 `/api/external/emails` 查询 xAI 验证码；API Key 使用 `X-API-Key` 请求头，不通过 URL 传输
 - `inbucket` 使用自建 [Inbucket](https://github.com/inbucket/inbucket) 实例：填实例地址和收信根域名即可，邮箱即建即用，无需注册 API；根域名可配多个轮换，并可按 `inbucket_random_levels` 叠加随机多级子域（需泛解析收信）
 - 切换服务商时只显示该服务实际支持的字段；保存后新的注册任务读取 `config.json`
 - 已保存的 API Key、JWT 和密码不会通过接口或页面回显；密钥输入留空会保留原值，必须点“清除”并保存才会删除

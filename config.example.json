@@ -45,6 +45,10 @@
   "outlook_rt_inventory": "",
   "outlook_rt_used_path": "",
   "outlook_rt_client_id": "9e5f94bc-e8a4-4e73-b8be-63364c29d753",
+  "cf_outlook_api_base": "https://mail.example.com",
+  "cf_outlook_api_key": "",
+  "cf_outlook_inventory": "",
+  "cf_outlook_used_path": "",
   "inbucket_api_base": "",
   "inbucket_domain": "",
   "inbucket_random_levels": "0"

@@ -27,6 +27,7 @@ PROVIDER_LABELS = {
     "cloudmail": "CloudMail",
     "moemail": "MoeMail",
     "outlook_rt": "Outlook RT 库存",
+    "cf_outlook": "cf-outlook 邮箱 API",
     "inbucket": "Inbucket",
 }
 SUPPORTED_PROVIDERS = tuple(PROVIDER_LABELS)
@@ -182,6 +183,26 @@ FIELD_DEFINITIONS = {
         "default": "9e5f94bc-e8a4-4e73-b8be-63364c29d753",
         "placeholder": "默认 Microsoft Authentication Broker",
     },
+    "cf_outlook_api_base": {
+        "label": "站点 URL",
+        "type": "url",
+        "placeholder": "https://mail.example.com",
+    },
+    "cf_outlook_api_key": {
+        "label": "API Key",
+        "type": "password",
+        "secret": True,
+    },
+    "cf_outlook_inventory": {
+        "label": "邮箱库存路径",
+        "type": "text",
+        "placeholder": "/path/to/outlook-emails.txt",
+    },
+    "cf_outlook_used_path": {
+        "label": "已用记录路径（可选）",
+        "type": "text",
+        "placeholder": "默认 inventory.used",
+    },
     "inbucket_api_base": {
         "label": "实例地址",
         "type": "url",
@@ -238,6 +259,12 @@ PROVIDER_FIELDS = {
         "outlook_rt_inventory",
         "outlook_rt_used_path",
         "outlook_rt_client_id",
+    ),
+    "cf_outlook": (
+        "cf_outlook_api_base",
+        "cf_outlook_api_key",
+        "cf_outlook_inventory",
+        "cf_outlook_used_path",
     ),
     "inbucket": ("inbucket_api_base", "inbucket_domain", "inbucket_random_levels"),
 }
@@ -378,6 +405,11 @@ def _normalize_value(name: str, value: object):
         if text and any(ch in text for ch in "\n\r\0"):
             raise EmailProviderConfigError("库存路径无效")
         return text
+    if name in {"cf_outlook_inventory", "cf_outlook_used_path"}:
+        text = _string(value)
+        if text and any(ch in text for ch in "\n\r\0"):
+            raise EmailProviderConfigError("邮箱库存路径无效")
+        return text
     return _string(value, strip=name != "cloudmail_password")
 
 
@@ -414,6 +446,14 @@ def _is_configured(provider: str, values: dict) -> bool:
     if provider == "outlook_rt":
         inventory = str(values.get("outlook_rt_inventory") or "").strip()
         return bool(inventory and Path(inventory).expanduser().is_file())
+    if provider == "cf_outlook":
+        inventory = str(values.get("cf_outlook_inventory") or "").strip()
+        return bool(
+            values.get("cf_outlook_api_base")
+            and values.get("cf_outlook_api_key")
+            and inventory
+            and Path(inventory).expanduser().is_file()
+        )
     if provider == "inbucket":
         return bool(values.get("inbucket_api_base") and values.get("inbucket_domain"))
     return False

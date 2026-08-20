@@ -37,7 +37,7 @@ ALLOWED_SCHEMES = {"http", "https", "socks5", "socks5h"}
 ALLOWED_STATUSES = {"unknown", "healthy", "unhealthy", "cooldown"}
 MAX_IMPORT_ITEMS = 500
 MAX_TEST_ITEMS = 200
-DEFAULT_TEST_TIMEOUT = 8.0
+DEFAULT_TEST_TIMEOUT = 32.0
 NETWORK_COOLDOWN_SECONDS = max(
     10, int(os.environ.get("PROXY_NETWORK_COOLDOWN_SECONDS", "90"))
 )
@@ -762,7 +762,7 @@ def _parse_probe_payload(payload: object) -> tuple[str, int | None, str]:
 def probe_xai_signup(url: object, timeout: float = DEFAULT_TEST_TIMEOUT, *, http_get=None) -> str:
     """Require the proxy to reach the actual registration page, not only an IP API."""
     normalized = normalize_proxy(url)
-    timeout = max(2.0, min(float(timeout), 20.0))
+    timeout = max(2.0, min(float(timeout), DEFAULT_TEST_TIMEOUT))
     from connectivity import check_xai_signup
 
     if http_get is None:
@@ -782,7 +782,7 @@ def probe_xai_signup(url: object, timeout: float = DEFAULT_TEST_TIMEOUT, *, http
 def probe_proxy(url: object, timeout: float = DEFAULT_TEST_TIMEOUT) -> dict:
     """Probe one proxy via public IP services and return non-secret metadata."""
     normalized = normalize_proxy(url)
-    timeout = max(2.0, min(float(timeout), 20.0))
+    timeout = max(2.0, min(float(timeout), DEFAULT_TEST_TIMEOUT))
     import requests
 
     session = requests.Session()
@@ -931,7 +931,7 @@ def start_proxy_tests(ids: object = None, *, timeout: float = DEFAULT_TEST_TIMEO
         )
         thread = threading.Thread(
             target=_run_test_job,
-            args=(job_id, selected, max(2.0, min(float(timeout), 20.0))),
+            args=(job_id, selected, max(2.0, min(float(timeout), DEFAULT_TEST_TIMEOUT))),
             name=f"proxy-test-{job_id}",
             daemon=True,
         )
