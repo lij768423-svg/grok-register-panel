@@ -306,7 +306,8 @@ def check_email_api(provider: str, config: dict, http_get: Callable, http_post: 
             if not key:
                 return "邮箱API", False, "未配置 cf_outlook_api_key"
             if not inventory:
-                return "邮箱API", False, "未配置 cf_outlook_inventory"
+                detail = cf_outlook_provider.probe_api(http_get, base, key)
+                return "邮箱API", True, detail
             candidate = cf_outlook_provider.first_available_email(
                 inventory,
                 str(config.get("cf_outlook_used_path") or ""),

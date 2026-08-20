@@ -194,9 +194,9 @@ FIELD_DEFINITIONS = {
         "secret": True,
     },
     "cf_outlook_inventory": {
-        "label": "邮箱库存路径",
+        "label": "邮箱库存路径（可选）",
         "type": "text",
-        "placeholder": "/path/to/outlook-emails.txt",
+        "placeholder": "留空时通过 API 随机取 active 邮箱",
     },
     "cf_outlook_used_path": {
         "label": "已用记录路径（可选）",
@@ -451,8 +451,7 @@ def _is_configured(provider: str, values: dict) -> bool:
         return bool(
             values.get("cf_outlook_api_base")
             and values.get("cf_outlook_api_key")
-            and inventory
-            and Path(inventory).expanduser().is_file()
+            and (not inventory or Path(inventory).expanduser().is_file())
         )
     if provider == "inbucket":
         return bool(values.get("inbucket_api_base") and values.get("inbucket_domain"))

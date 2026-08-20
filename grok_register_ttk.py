@@ -1958,9 +1958,16 @@ def get_cf_outlook_used_path():
 
 
 def cf_outlook_take_mailbox():
-    return cf_outlook_provider.take_mailbox(
-        get_cf_outlook_inventory(),
-        used_path=get_cf_outlook_used_path(),
+    inventory = get_cf_outlook_inventory()
+    if inventory:
+        return cf_outlook_provider.take_mailbox(
+            inventory,
+            used_path=get_cf_outlook_used_path(),
+        )
+    return cf_outlook_provider.take_mailbox_from_api(
+        http_get,
+        get_cf_outlook_api_base(),
+        get_cf_outlook_api_key(),
     )
 
 
@@ -3177,7 +3184,7 @@ class GrokRegisterGUI:
                 1,
                 1,
             ),
-            p_label(1, 2, "邮箱库存:"),
+            p_label(1, 2, "邮箱库存（可选）:"),
             p_field(
                 tk_entry(self.provider_frame, textvariable=self.cf_outlook_inventory_var, width=34),
                 1,
@@ -3191,7 +3198,7 @@ class GrokRegisterGUI:
             ),
             p_label(2, 2, "库存格式:"),
             p_field(
-                tk_label(self.provider_frame, text="每行一个邮箱，或 JSONL 的 email 字段", bg=UI_PANEL_BG),
+                tk_label(self.provider_frame, text="留空时通过 API 随机取 active 邮箱", bg=UI_PANEL_BG),
                 2,
                 3,
                 sticky=tk.W,
@@ -3661,9 +3668,7 @@ class GrokRegisterGUI:
             if not get_cf_outlook_api_key():
                 missing.append("cf_outlook API Key")
             inv = get_cf_outlook_inventory()
-            if not inv:
-                missing.append("cf_outlook 邮箱库存路径")
-            elif not Path(inv).expanduser().is_file():
+            if inv and not Path(inv).expanduser().is_file():
                 self.log(f"[!] cf_outlook 邮箱库存文件不存在: {inv}")
                 return
             if missing:

@@ -345,6 +345,19 @@ def test_cf_outlook_schema_and_secret_preservation():
             assert preserved["cf_outlook_api_key"] == "test-api-key"
 
 
+def test_cf_outlook_api_mode_does_not_require_inventory():
+    with IsolatedConfig():
+        saved = email_provider_store.save_email_provider_config(
+            "cf_outlook",
+            {
+                "cf_outlook_api_base": "https://mail.example.com",
+                "cf_outlook_api_key": "test-api-key",
+                "cf_outlook_inventory": "",
+            },
+        )
+        assert saved["configured"] is True
+
+
 if __name__ == "__main__":
     test_provider_schema_and_defaults()
     test_secret_masking_preservation_clear_and_private_file()

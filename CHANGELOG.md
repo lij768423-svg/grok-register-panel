@@ -4,7 +4,7 @@
 
 ### Added
 
-- Add a `cf_outlook` provider for `cf-outlook-email`: claim existing Outlook mailboxes from a local inventory and poll `/api/external/emails` with `X-API-Key` for xAI verification codes.
+- Add a `cf_outlook` provider for `cf-outlook-email`: use `/api/external/accounts/random` by default or an optional local inventory, then poll `/api/external/emails` with `X-API-Key` for xAI verification codes.
 - Add an `inbucket` email provider for self-hosted Inbucket instances: generate addresses under a configured receive domain and poll the v1 mailbox API for the xAI verification code. Root domains accept a comma-separated rotation list, and `inbucket_random_levels` can stack 1-3 random subdomain labels per address (wildcard MX required).
 - Treat Windows as a first-class runtime: PowerShell setup/batch/panel scripts, Playwright `node.exe` + EPIPE guard (no bash wrapper), default headless batches, and SOCKS5 `PySocks` as a direct dependency so the panel can import remote residential URLs without Linux mixed ports.
 

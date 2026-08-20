@@ -28,6 +28,7 @@ from secure_files import (
 )
 
 API_PATH = "/api/external/emails"
+RANDOM_ACCOUNT_PATH = "/api/external/accounts/random"
 DEFAULT_FOLDER = "all"
 DEFAULT_TOP = 10
 WAIT_HEARTBEAT_SECONDS = 15
@@ -80,6 +81,11 @@ def normalize_base(base_url: str = "") -> str:
 def api_url(base_url: str) -> str:
     base = normalize_base(base_url)
     return f"{base}{API_PATH}" if base else ""
+
+
+def random_account_url(base_url: str) -> str:
+    base = normalize_base(base_url)
+    return f"{base}{RANDOM_ACCOUNT_PATH}" if base else ""
 
 
 def used_path_for(inventory_path: str, used_path: str = "") -> Path:
@@ -274,6 +280,70 @@ def take_mailbox(inventory_path: str, *, used_path: str = "", max_attempts: int 
     raise RuntimeError(f"cf_outlook 库存耗尽（已用/预留），文件: {Path(path).expanduser()}")
 
 
+def _random_account(http_get: HttpGet, base_url: str, api_key: str) -> str:
+    key = str(api_key or "").strip()
+    if not key:
+        raise ApiError(401, "cf_outlook API Key 未配置")
+    resp = http_get(
+        random_account_url(base_url),
+        headers={"Accept": "application/json", "X-API-Key": key},
+        params={"status": "active"},
+        timeout=20,
+        proxies={},
+    )
+    status = int(getattr(resp, "status_code", 0) or 0)
+    if status >= 400:
+        raise ApiError(status, _safe_api_error(resp))
+    try:
+        payload = resp.json()
+    except Exception as exc:
+        raise ApiError(502, "invalid_json") from exc
+    if not isinstance(payload, dict) or payload.get("success") is False:
+        error = payload.get("error") if isinstance(payload, dict) else {}
+        code = error.get("code") if isinstance(error, dict) else "request_failed"
+        raise ApiError(status if status >= 400 else 404, str(code or "request_failed")[:80])
+    data = payload.get("data")
+    email = str(data.get("email") or "").strip() if isinstance(data, dict) else ""
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+", email):
+        raise ApiError(502, "random_account_missing_email")
+    return email
+
+
+def take_mailbox_from_api(
+    http_get: HttpGet,
+    base_url: str,
+    api_key: str,
+    *,
+    max_attempts: int = 8,
+) -> Tuple[str, str]:
+    """Take an active mailbox from the upstream random-account endpoint."""
+    if not normalize_base(base_url):
+        raise RuntimeError("未配置 cf_outlook_api_base")
+    attempts = max(1, int(max_attempts or 8))
+    last_error: Optional[Exception] = None
+    for _ in range(attempts):
+        try:
+            email = _random_account(http_get, base_url, api_key)
+        except Exception as exc:
+            last_error = exc
+            break
+        key = email.lower()
+        with _lock:
+            if key in _reserved:
+                continue
+            token_key = "cf_outlook:" + secrets.token_urlsafe(12)
+            _reserved.add(key)
+            _sessions[token_key] = {
+                "email": email,
+                "inventory_path": "",
+                "used_path": "",
+            }
+            return email, token_key
+    if last_error:
+        raise RuntimeError(f"cf_outlook API 随机取号失败: {last_error}") from last_error
+    raise RuntimeError("cf_outlook API 随机取号重复命中正在使用的邮箱，请稍后重试")
+
+
 def release_reservation(token_key: str = "", email: str = "") -> None:
     with _lock:
         session = _sessions.pop(token_key, None) if token_key else None
@@ -429,7 +499,10 @@ def wait_for_code(
         raise
 
 
-def probe_api(http_get: HttpGet, base_url: str, api_key: str, email: str) -> str:
-    """Read one configured mailbox without changing inventory state."""
-    items = _messages(http_get, base_url, api_key, email)
-    return f"cf_outlook 可达；邮箱当前返回 {len(items)} 封邮件"
+def probe_api(http_get: HttpGet, base_url: str, api_key: str, email: str = "") -> str:
+    """Probe the random-account API or read one configured mailbox."""
+    if email:
+        items = _messages(http_get, base_url, api_key, email)
+        return f"cf_outlook 可达；邮箱当前返回 {len(items)} 封邮件"
+    picked = _random_account(http_get, base_url, api_key)
+    return f"cf_outlook API 可达；随机取号成功（{picked}）"
