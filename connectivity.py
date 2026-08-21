@@ -329,6 +329,8 @@ def check_cpa(config: dict, http_get: Callable) -> CheckResult:
     remote = str(config.get("cpa_remote_url", "") or "").strip()
     key = str(config.get("cpa_management_key", "") or "").strip()
     g2a_dir = str(config.get("grok2api_auth_dir", "") or "").strip()
+    g2a_remote = str(config.get("grok2api_remote_url", "") or "").strip()
+    g2a_key = str(config.get("grok2api_management_key", "") or "").strip()
 
     # 相对路径基于项目根目录解析（与 grok_register_ttk.py 的 APP_DIR 一致）
     import os as _os
@@ -338,8 +340,8 @@ def check_cpa(config: dict, http_get: Callable) -> CheckResult:
     if g2a_dir and not _os.path.isabs(g2a_dir):
         g2a_dir = _os.path.join(_app_dir, g2a_dir)
 
-    if not auth_dir and not remote and not g2a_dir:
-        return "CPA", False, "已开启但未配置 CPA auth 目录 / 远程地址 / Grok2API 目录"
+    if not auth_dir and not remote and not g2a_dir and not g2a_remote:
+        return "CPA", False, "已开启但未配置 CPA/Grok2API 本地或远程目标"
     parts = []
     import os
     if auth_dir:
@@ -361,6 +363,18 @@ def check_cpa(config: dict, http_get: Callable) -> CheckResult:
                 parts.append("Grok2API目录已创建")
             except Exception as exc:
                 return "CPA", False, f"Grok2API 目录不存在且无法创建: {g2a_dir} ({exc})"
+    if g2a_remote:
+        if not g2a_key:
+            return "CPA", False, "已配 Grok2API 远程地址但缺少管理令牌"
+        try:
+            u = urlparse(g2a_remote)
+            host = u.hostname or "127.0.0.1"
+            port = u.port or (443 if u.scheme == "https" else 80)
+            if not _tcp_open(host, port):
+                return "CPA", False, f"Grok2API 远程不可达 {host}:{port}"
+            parts.append("Grok2API远程TCP可达")
+        except Exception as exc:
+            return "CPA", False, f"Grok2API 远程探测失败: {redact_log_line(str(exc))}"
     if remote:
         if not key:
             return "CPA", False, "已配远程地址但缺少管理密钥"

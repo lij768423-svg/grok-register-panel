@@ -164,6 +164,7 @@ Windows 不要把 `PLAYWRIGHT_NODEJS_PATH` 指到 `scripts/playwright-node`（�
 | `cpa_auth_dir` | 本地 CPA 目录（`xai-*.json`） |
 | `grok2api_auth_dir` | Grok2API 风格 auth 目录 |
 | `cpa_remote_url` / `cpa_management_key` | 远程 CPA Management API（可选） |
+| `grok2api_remote_url` / `grok2api_management_key` | Grok2API 服务根地址和管理端 Bearer token；自动上传到 `/api/admin/v1/accounts/import`（可选） |
 
 ### 环境变量
 

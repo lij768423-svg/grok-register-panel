@@ -7,7 +7,7 @@ SSO cookie → CPA / Grok2API auth.json 格式（纯 HTTP）
 
 写出：
   - CLIProxyAPI 扁平 xai-*.json（base_url=cli-chat-proxy.grok.com）
-  - Grok2API / ~/.grok 风格 issuer::client_id 嵌套 auth
+  - Grok2API accounts 数组格式 auth
 
 用法:
   # 单个 / 批量 SSO，写出多个独立 auth 文件（每个可直接 cp 到 ~/.grok/auth.json）
@@ -1857,13 +1857,113 @@ def grok2api_auth_filename(entry: dict, email: str = "") -> str:
     return f"g2a-{safe}.json"
 
 
+def token_to_grok2api_account(token: dict, email: str = "") -> dict:
+    """把 OAuth token 转成 Grok2API 的 ``{"accounts": [...]}`` 单账号格式."""
+    access = str(token.get("access_token") or token.get("key") or "").strip()
+    refresh = str(token.get("refresh_token") or "").strip()
+    id_token = str(token.get("id_token") or "").strip()
+    payload = decode_jwt_payload(access)
+    id_payload = decode_jwt_payload(id_token) if id_token else {}
+
+    resolved_email = str(
+        email
+        or id_payload.get("email")
+        or payload.get("email")
+        or ""
+    ).strip()
+    subject = str(
+        payload.get("sub")
+        or payload.get("user_id")
+        or id_payload.get("sub")
+        or ""
+    ).strip()
+    principal_id = str(
+        payload.get("principal_id")
+        or payload.get("user_id")
+        or subject
+    ).strip()
+    client_id = str(payload.get("client_id") or CLIENT_ID).strip()
+    team_id = str(payload.get("team_id") or "").strip()
+
+    expires_at = ""
+    if payload.get("exp") is not None:
+        try:
+            expires_at = rfc3339_ns(float(payload["exp"]))
+        except (TypeError, ValueError, OverflowError):
+            expires_at = ""
+    if not expires_at:
+        try:
+            expires_at = rfc3339_ns(
+                time.time() + int(token.get("expires_in") or 21600)
+            )
+        except (TypeError, ValueError, OverflowError):
+            expires_at = ""
+
+    return {
+        "provider": "grok_build",
+        "name": resolved_email,
+        "client_id": client_id,
+        "access_token": access,
+        "refresh_token": refresh,
+        "id_token": id_token,
+        "token_type": token.get("token_type") or "Bearer",
+        "scope": token.get("scope") or "",
+        "expires_at": expires_at,
+        # Grok2API uses expires_at as the source of truth for this format.
+        "expires_in": 0,
+        "email": resolved_email,
+        "sub": subject,
+        "user_id": subject,
+        "principal_id": principal_id,
+        "team_id": team_id,
+    }
+
+
 def write_grok2api_auth(auth_dir: Path, token: dict, email: str = "") -> Path:
-    """写出 Grok2API / ~/.grok 风格 auth（issuer::client_id 嵌套）。"""
+    """写出 Grok2API ``{"accounts": [{...}]}`` auth 文件。"""
     ensure_private_dir(auth_dir)
-    key, entry = token_to_auth_entry(token, email=email)
-    path = auth_dir / grok2api_auth_filename(entry, email=email)
-    write_auth_json(path, key, entry)
+    account = token_to_grok2api_account(token, email=email)
+    path = auth_dir / grok2api_auth_filename(account, email=email)
+    atomic_write_json(path, {"accounts": [account]})
     return path
+
+
+def upload_grok2api_auth_remote(
+    base_url: str,
+    management_key: str,
+    account: dict,
+    timeout: int = 30,
+    proxy: str = "",
+) -> str:
+    """通过 Grok2API 管理接口以 multipart 文件方式导入单个账号。"""
+    base = str(base_url or "").strip().rstrip("/")
+    key = str(management_key or "").strip()
+    if not base:
+        raise ValueError("grok2api_remote_url 为空")
+    if not key:
+        raise ValueError("grok2api_management_key 为空")
+
+    endpoint = "/api/admin/v1/accounts/import"
+    url = base if base.endswith(endpoint) else f"{base}{endpoint}"
+    name = grok2api_auth_filename(account)
+    payload = json.dumps(
+        {"accounts": [account]}, ensure_ascii=False, indent=2
+    ).encode("utf-8")
+    proxies = {"http": proxy, "https": proxy} if proxy else None
+    resp = requests.post(
+        url,
+        headers={
+            "Accept": "text/event-stream",
+            "Authorization": f"Bearer {key}",
+        },
+        files={"files": (name, payload, "application/json")},
+        timeout=timeout,
+        proxies=proxies,
+        impersonate="chrome",
+    )
+    if resp.status_code >= 400:
+        raise RuntimeError(f"Grok2API 远程上传失败 HTTP {resp.status_code}")
+    return name
 
 
 def upload_cpa_auth_remote(
@@ -2097,6 +2197,12 @@ def apply_config_defaults(args) -> None:
         args.grok2api_auth_dir = _resolve_config_path(base, config.get("grok2api_auth_dir"))
     args.cpa_remote_url = args.cpa_remote_url or str(config.get("cpa_remote_url") or "").strip()
     args.cpa_management_key = args.cpa_management_key or str(config.get("cpa_management_key") or "").strip()
+    args.grok2api_remote_url = getattr(args, "grok2api_remote_url", None) or str(
+        config.get("grok2api_remote_url") or ""
+    ).strip()
+    args.grok2api_management_key = getattr(args, "grok2api_management_key", None) or str(
+        config.get("grok2api_management_key") or ""
+    ).strip()
     args.proxy = args.proxy or str(config.get("proxy") or "").strip()
     if getattr(args, "bfs_check", None) is None:
         args.bfs_check = _config_bool(config.get("bfs_check"), True)
@@ -2117,6 +2223,7 @@ def should_create_default_out_dir(args, record_count: int) -> bool:
             args.cpa_auth_dir,
             args.cpa_remote_url,
             args.grok2api_auth_dir,
+            getattr(args, "grok2api_remote_url", ""),
         )
     )
     return record_count > 1 and not has_target and not args.merge
@@ -2186,6 +2293,16 @@ def main() -> int:
         "--grok2api-auth-dir",
         default=None,
         help="额外写出 Grok2API / ~/.grok 风格 g2a-<email>.json 到该目录",
+    )
+    ap.add_argument(
+        "--grok2api-remote-url",
+        default=None,
+        help="Grok2API 服务根地址；配合 --grok2api-management-key 上传到 accounts/import",
+    )
+    ap.add_argument(
+        "--grok2api-management-key",
+        default=None,
+        help="Grok2API 管理端 Bearer token",
     )
     ap.add_argument(
         "--prefer",
@@ -2326,6 +2443,10 @@ def main() -> int:
         ap.error("使用 --cpa-remote-url 时必须同时提供 --cpa-management-key")
     if args.cpa_management_key and not args.cpa_remote_url:
         ap.error("使用 --cpa-management-key 时必须同时提供 --cpa-remote-url")
+    if args.grok2api_remote_url and not args.grok2api_management_key:
+        ap.error("使用 --grok2api-remote-url 时必须同时提供 --grok2api-management-key")
+    if args.grok2api_management_key and not args.grok2api_remote_url:
+        ap.error("使用 --grok2api-management-key 时必须同时提供 --grok2api-remote-url")
 
     input_count = len(records)
     existing_emails = existing_cpa_emails(args.cpa_auth_dir)
@@ -2352,6 +2473,7 @@ def main() -> int:
         and not args.cpa_auth_dir
         and not args.cpa_remote_url
         and not args.grok2api_auth_dir
+        and not args.grok2api_remote_url
         and len(records) == 1
     ):
         args.out = str(Path.home() / ".grok" / "auth.json")
@@ -2466,6 +2588,18 @@ def main() -> int:
             if args.grok2api_auth_dir:
                 gp = write_grok2api_auth(Path(args.grok2api_auth_dir), token, email=email)
                 print(f"  💾 Grok2API → {gp}")
+            if args.grok2api_remote_url:
+                grok_account = token_to_grok2api_account(token, email=email)
+                name = upload_grok2api_auth_remote(
+                    args.grok2api_remote_url,
+                    args.grok2api_management_key,
+                    grok_account,
+                    proxy=args.proxy,
+                )
+                print(
+                    f"  💾 Grok2API 远程 → "
+                    f"{args.grok2api_remote_url.rstrip('/')}/.../{name}"
+                )
 
             if args.cpa_auth_dir or args.cpa_remote_url:
                 cpa_record = token_to_cpa_record(

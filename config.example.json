@@ -28,6 +28,8 @@
   "cpa_remote_url": "",
   "cpa_management_key": "",
   "grok2api_auth_dir": "grok2api_auth",
+  "grok2api_remote_url": "",
+  "grok2api_management_key": "",
   "bfs_check": true,
   "bfs_skip_cpa": false,
   "bfs_disable_cpa": false,
