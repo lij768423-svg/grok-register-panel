@@ -1,0 +1,119 @@
+/* Hallmark · pre-emit critique: P4 H5 E5 S5 R4 V4 */
+/* Hallmark · macrostructure: Split Studio · tone: utilitarian-technical
+ * theme: studied-DNA (source: http://100.102.32.24:4176/)
+ * paper: oklch(95.8% 0.008 105) · accent: oklch(68% 0.17 35) coral
+ * display: Geist Variable · body: Geist Variable + Noto Sans SC · outlier: Geist Mono
+ * nav: N9 edge-aligned · footer: Ft2 inline-rule
+ * studied: yes · DNA-source: url
+ * source-url: http://100.102.32.24:4176/
+ * observed-fonts: Geist Variable + Geist Mono + Noto Sans SC
+ * observed-accent: #f06449 · rhythm: graph-paper 40px, red mark, black CTA
+ */
+
+:root {
+  color-scheme: light;
+  --font-display: "Geist Variable", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-body: "Geist Variable", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-outlier: "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
+
+  --color-paper: oklch(95.8% 0.008 105);
+  --color-paper-2: oklch(93.2% 0.01 105);
+  --color-paper-3: oklch(98.2% 0.006 105);
+  --color-ink: oklch(17.5% 0.008 105);
+  --color-muted: oklch(48% 0.014 90);
+  --color-muted-strong: oklch(32% 0.012 90);
+  --color-rule: oklch(17.5% 0.008 105 / 0.16);
+  --color-rule-strong: oklch(17.5% 0.008 105 / 0.42);
+  --color-accent: oklch(68% 0.17 35);
+  --color-accent-hover: oklch(72% 0.18 35);
+  --color-accent-ink: oklch(97.5% 0.006 105);
+  --color-cta: oklch(16.5% 0.01 105);
+  --color-cta-hover: oklch(24% 0.01 105);
+  --color-focus: oklch(68% 0.17 35);
+  --color-shadow: oklch(17.5% 0.008 105 / 0.12);
+  --accent: var(--color-accent);
+  --kinetic-trail-color: #e5b7af;
+  --kinetic-dot-color: rgba(21, 22, 19, 0.15);
+
+  --space-3xs: 0.125rem;
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2.5rem;
+  --space-2xl: 4rem;
+  --space-3xl: 6rem;
+
+  --text-display: clamp(2.1rem, 4.8vw + 0.45rem, 4.15rem);
+  --text-4xl: clamp(1.75rem, 2.4vw + 0.8rem, 2.4rem);
+  --text-lg: 1.04rem;
+  --text-sm: 0.9rem;
+  --text-xs: 0.75rem;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro: 120ms;
+  --dur-short: 220ms;
+  --dur-long: 420ms;
+
+  --radius: 8px;
+  --radius-pill: 999px;
+  --rule: 1px;
+  --grid: 40px;
+  --shell: min(100% - 1.5rem, 1440px);
+  --header-h: 4.5rem;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-paper: oklch(16.8% 0.01 105);
+  --color-paper-2: oklch(20.5% 0.012 105);
+  --color-paper-3: oklch(24% 0.012 105);
+  --color-ink: oklch(95.8% 0.008 105);
+  --color-muted: oklch(72% 0.014 100);
+  --color-muted-strong: oklch(84% 0.012 100);
+  --color-rule: oklch(95.8% 0.008 105 / 0.1);
+  --color-rule-strong: oklch(95.8% 0.008 105 / 0.36);
+  --color-accent: oklch(72% 0.17 35);
+  --color-accent-hover: oklch(76% 0.16 35);
+  --color-accent-ink: oklch(16.5% 0.01 105);
+  --color-cta: oklch(95.8% 0.008 105);
+  --color-cta-hover: oklch(92% 0.01 105);
+  --color-focus: oklch(72% 0.17 35);
+  --color-shadow: oklch(0% 0 0 / 0.45);
+  --accent: var(--color-accent);
+  --kinetic-trail-color: #f3b9ac;
+  --kinetic-dot-color: rgba(240, 241, 237, 0.13);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --color-paper: oklch(16.8% 0.01 105);
+    --color-paper-2: oklch(20.5% 0.012 105);
+    --color-paper-3: oklch(24% 0.012 105);
+    --color-ink: oklch(95.8% 0.008 105);
+    --color-muted: oklch(72% 0.014 100);
+    --color-muted-strong: oklch(84% 0.012 100);
+    --color-rule: oklch(95.8% 0.008 105 / 0.1);
+    --color-rule-strong: oklch(95.8% 0.008 105 / 0.36);
+    --color-accent: oklch(72% 0.17 35);
+    --color-accent-hover: oklch(76% 0.16 35);
+    --color-accent-ink: oklch(16.5% 0.01 105);
+    --color-cta: oklch(95.8% 0.008 105);
+    --color-cta-hover: oklch(92% 0.01 105);
+    --color-focus: oklch(72% 0.17 35);
+    --color-shadow: oklch(0% 0 0 / 0.45);
+    --accent: var(--color-accent);
+    --kinetic-trail-color: #f3b9ac;
+    --kinetic-dot-color: rgba(240, 241, 237, 0.13);
+  }
+}
+
+@media (min-width: 60rem) {
+  :root {
+    --shell: min(100% - 7rem, 1440px);
+  }
+}

@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Grok Register + Live Panel</title>
+    <meta
+      name="description"
+      content="批量注册 Grok 账号（Camoufox）+ Web 监控面板。任务编排、代理池、邮箱轮换、BFS 检测、Token 鉴权。"
+    />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f2f1eb" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121210" />
+    <meta property="og:title" content="Grok Register + Live Panel" />
+    <meta
+      property="og:description"
+      content="批量注册 Grok 账号 + 实时 Web 监控面板。"
+    />
+    <meta property="og:type" content="website" />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@fontsource-variable/geist@5.2.5/index.min.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@fontsource-variable/geist-mono@5.2.5/index.min.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&display=swap"
+    />
+    <link rel="stylesheet" href="tokens.css?v=3" />
+    <link rel="stylesheet" href="site.css?v=3" />
+  </head>
+  <body>
+    <canvas class="global-pixel-trail" aria-hidden="true"></canvas>
+    <div class="global-flowing-lights" aria-hidden="true">
+      <span class="global-flow-light-rail is-horizontal is-top"><span class="global-flow-light-runner"></span></span>
+      <span class="global-flow-light-rail is-horizontal is-bottom"><span class="global-flow-light-runner"></span></span>
+      <span class="global-flow-light-rail is-vertical is-left"><span class="global-flow-light-runner"></span></span>
+      <span class="global-flow-light-rail is-vertical is-right"><span class="global-flow-light-runner"></span></span>
+    </div>
+    <canvas class="click-spark-canvas" aria-hidden="true"></canvas>
+    <header class="site-header">
+      <div class="shell nav">
+        <a class="brand" href="#top">
+          GrokRegister
+          <span class="brand-mark" aria-hidden="true"></span>
+        </a>
+        <nav class="nav-links" aria-label="页面">
+          <a href="#panel">面板</a>
+          <a href="#specs">能力</a>
+          <a href="#install">安装</a>
+        </nav>
+        <div class="nav-actions">
+          <a
+            class="icon-btn is-round"
+            href="https://github.com/lij768423-svg/grok-register-panel"
+            aria-label="GitHub 仓库"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M12 2C6.48 2 2 6.58 2 12.26c0 4.52 2.87 8.35 6.84 9.71.5.1.68-.22.68-.49 0-.24-.01-.87-.01-1.71-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.36 1.12 2.94.85.09-.67.35-1.12.63-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.7 0 0 .84-.27 2.75 1.05A9.3 9.3 0 0 1 12 6.84c.85 0 1.71.12 2.51.35 1.9-1.32 2.74-1.05 2.74-1.05.55 1.4.2 2.44.1 2.7.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.8-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.6.69.49A10.03 10.03 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z"
+              />
+            </svg>
+          </a>
+          <button class="icon-btn" type="button" id="theme-toggle" aria-label="切换深浅色">
+            <svg class="icon-moon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M12.1 3.1a1 1 0 0 1 1.05.2 8 8 0 1 0 7.55 7.55 1 1 0 0 1 1.25-1.16A10 10 0 1 1 11.3 2.05a1 1 0 0 1 .8 1.05Z"
+              />
+            </svg>
+            <svg class="icon-sun" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M12 7.5A4.5 4.5 0 1 1 7.5 12 4.5 4.5 0 0 1 12 7.5Zm0-5.5a1 1 0 0 1 1 1V5a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1Zm0 16a1 1 0 0 1 1 1v1.5a1 1 0 1 1-2 0V19a1 1 0 0 1 1-1ZM3 11a1 1 0 0 1 1-1h1.5a1 1 0 1 1 0 2H4a1 1 0 0 1-1-1Zm15.5 0a1 1 0 0 1 1-1H21a1 1 0 1 1 0 2h-1.5a1 1 0 0 1-1-1ZM5.64 5.64a1 1 0 0 1 1.41 0L8.1 6.7A1 1 0 1 1 6.7 8.1L5.64 7.05a1 1 0 0 1 0-1.41Zm12.02 12.02a1 1 0 0 1 1.41 0l1.06 1.05a1 1 0 1 1-1.41 1.41l-1.06-1.05a1 1 0 0 1 0-1.41ZM18.36 5.64a1 1 0 0 1 0 1.41L17.3 8.1A1 1 0 1 1 15.9 6.7l1.05-1.06a1 1 0 0 1 1.41 0ZM5.64 18.36a1 1 0 0 1 1.41 0L8.1 19.3A1 1 0 1 1 6.7 20.7l-1.06-1.05a1 1 0 0 1 0-1.41Z"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="shell hero">
+        <div class="hero-copy">
+          <p class="kicker" id="kicker">lij768423-svg / grok-register-panel</p>
+          <h1>批量注册。<br />一块能看的面板。</h1>
+          <p class="lede">
+            Camoufox 注册机接上 Live 面板：代理池、邮箱轮换、ASN 黑名单、BFS / SSO 风控。Linux、macOS、Windows。
+          </p>
+          <div class="hero-actions">
+            <span class="magnetic-target" data-magnetic="0.18">
+              <a class="btn btn-primary" href="https://github.com/lij768423-svg/grok-register-panel">
+                <span class="btn-label">打开 GitHub</span>
+              </a>
+            </span>
+            <span class="magnetic-target" data-magnetic="0.18">
+              <button class="btn btn-secondary" type="button" id="copy-clone">
+                <span class="btn-label">复制 clone</span>
+              </button>
+            </span>
+          </div>
+        </div>
+        <div class="hero-visual">
+          <figure class="shot">
+            <img
+              class="shot-light"
+              src="screenshots/dashboard-light.png"
+              alt="Grok Register 注册控制台，浅色主题"
+              width="1600"
+              height="1000"
+            />
+            <img
+              class="shot-dark"
+              src="screenshots/dashboard-dark.png"
+              alt="Grok Register 注册控制台，深色主题"
+              width="1600"
+              height="1000"
+            />
+          </figure>
+          <svg class="signal" viewBox="0 0 460 176" fill="none" aria-hidden="true">
+            <circle cx="70" cy="88" r="42" stroke="currentColor" stroke-dasharray="4 6" />
+            <circle cx="70" cy="88" r="22" stroke="currentColor" stroke-dasharray="3 5" />
+            <path d="M70 88 L118 64 L168 96 L220 48 L280 70 L340 40 L400 78" stroke="currentColor" stroke-dasharray="5 6" />
+            <circle cx="118" cy="64" r="3" fill="currentColor" />
+            <circle cx="220" cy="48" r="3" fill="currentColor" />
+            <circle cx="340" cy="40" r="3" fill="currentColor" />
+          </svg>
+        </div>
+      </section>
+
+      <section class="shell stats" aria-label="仓库数据">
+        <div class="stat">
+          <div class="stat-value" id="stat-stars">804</div>
+          <div class="stat-label">GitHub stars</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" id="stat-forks">254</div>
+          <div class="stat-label">forks</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" id="stat-release">v0.4.4</div>
+          <div class="stat-label">最新 Release</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value" id="stat-days">22</div>
+          <div class="stat-label">天，从公开到现在</div>
+        </div>
+      </section>
+
+      <section class="shell panel" id="panel">
+        <div class="panel-copy">
+          <p class="kicker">控制台</p>
+          <h2>启停、并发、成功率，都在一块屏上。</h2>
+          <p>
+            编排器跑多轮 batch，风控满 N 暂停，ASN 自动扩黑。操作接口走 MONITOR_TOKEN，面板不回传原始日志尾。
+          </p>
+        </div>
+        <div class="panel-visual">
+          <figure class="shot">
+            <img class="shot-light" src="screenshots/dashboard-light.png" alt="注册控制台：任务参数、批次进度、时段成功率" width="1600" height="1000" />
+            <img class="shot-dark" src="screenshots/dashboard-dark.png" alt="" width="1600" height="1000" />
+          </figure>
+        </div>
+      </section>
+
+      <section class="shell panel is-flip">
+        <div class="panel-copy">
+          <p class="kicker">代理池</p>
+          <h2>自己的出口，探活、冷却、脱敏。</h2>
+          <p>
+            批量导入 HTTP / SOCKS，记录出口 IP、ASN、延迟。网络异常短冷却，注册风控长冷却。API 只返回脱敏端点。
+          </p>
+        </div>
+        <div class="panel-visual">
+          <figure class="shot">
+            <img class="shot-light" src="screenshots/proxy-pool-light.png" alt="外部代理池：导入、探活、冷却和出口质量" width="1600" height="1000" />
+            <img class="shot-dark" src="screenshots/proxy-pool-dark.png" alt="" width="1600" height="1000" />
+          </figure>
+        </div>
+      </section>
+
+      <section class="shell panel">
+        <div class="panel-copy">
+          <p class="kicker">邮箱</p>
+          <h2>多种 provider，域名轮换可拉黑。</h2>
+          <p>
+            Cloudflare Worker 邮、DuckMail、YYDS、MailNest、CloudMail、MoeMail、Outlook RT、Inbucket。xAI 明确拒域才累计，达到阈值自动拉黑。
+          </p>
+        </div>
+        <div class="panel-visual">
+          <figure class="shot">
+            <img class="shot-light" src="screenshots/email-service-light.png" alt="邮箱服务与高级域名轮换" width="1600" height="1000" />
+            <img class="shot-dark" src="screenshots/email-service-dark.png" alt="" width="1600" height="1000" />
+          </figure>
+        </div>
+      </section>
+
+      <section class="shell specs" id="specs">
+        <h2>能力表</h2>
+        <div class="spec-row">
+          <div class="spec-k">注册链路</div>
+          <div class="spec-v">邮箱 OTP → 资料页 → Turnstile → SSO → Device / OAuth → CPA / Grok2API</div>
+        </div>
+        <div class="spec-row">
+          <div class="spec-k">浏览器</div>
+          <div class="spec-v">Camoufox，Gecko 层指纹；Linux 无显示时面板自动 xvfb-run</div>
+        </div>
+        <div class="spec-row">
+          <div class="spec-k">风控</div>
+          <div class="spec-v">botFlag / policy=deny 早停；JWT bfs 扫描；SSO 状态面板不换 token</div>
+        </div>
+        <div class="spec-row">
+          <div class="spec-k">平台</div>
+          <div class="spec-v">Linux / macOS / Windows 本机批处理，不依赖把任务丢到远程机器</div>
+        </div>
+        <div class="spec-row">
+          <div class="spec-k">许可</div>
+          <div class="spec-v">MIT，基于 AaronL725/grok-register</div>
+        </div>
+      </section>
+
+      <section class="shell install" id="install">
+        <h2>装起来</h2>
+        <p class="install-note">Python 3.10+。pip 只装依赖，必须再跑 camoufox fetch 才能启动浏览器。</p>
+        <pre id="install-block">git clone https://github.com/lij768423-svg/grok-register-panel.git
+cd grok-register-panel
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python -m camoufox fetch</pre>
+        <div class="install-bar">
+          <button class="btn btn-secondary" type="button" id="copy-install">
+            <span class="btn-label">复制命令</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="shell note">
+        <p>
+          <strong>声明。</strong>
+          仅供自动化流程研究、自有环境联调与个人学习。请遵守 xAI / 邮箱 / 代理服务商条款与当地法律，勿用于未授权批量滥用。
+        </p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-inner">
+        <span>MIT · lij768423-svg</span>
+        <nav class="footer-links" aria-label="页脚">
+          <a href="https://github.com/lij768423-svg/grok-register-panel">GitHub</a>
+          <a href="https://github.com/lij768423-svg/grok-register-panel/releases">Releases</a>
+          <a href="https://linux.do">LINUX DO</a>
+          <a href="https://github.com/AaronL725/grok-register">上游</a>
+        </nav>
+      </div>
+    </footer>
+
+    <script>
+      const CLONE = "git clone https://github.com/lij768423-svg/grok-register-panel.git";
+      const root = document.documentElement;
+      const themeBtn = document.getElementById("theme-toggle");
+      const saved = localStorage.getItem("grp-theme");
+      if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+
+      themeBtn.addEventListener("click", () => {
+        const current =
+          root.getAttribute("data-theme") ||
+          (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        const next = current === "dark" ? "light" : "dark";
+        root.setAttribute("data-theme", next);
+        localStorage.setItem("grp-theme", next);
+      });
+
+      async function copyText(text, button) {
+        const label = button.querySelector(".btn-label");
+        const original = label.textContent;
+        try {
+          await navigator.clipboard.writeText(text);
+          button.classList.add("is-success");
+          label.textContent = "已复制";
+        } catch {
+          button.classList.add("is-error");
+          label.textContent = "复制失败";
+        }
+        window.setTimeout(() => {
+          button.classList.remove("is-success", "is-error");
+          label.textContent = original;
+        }, 1600);
+      }
+
+      document.getElementById("copy-clone").addEventListener("click", (e) => {
+        copyText(CLONE, e.currentTarget);
+      });
+      document.getElementById("copy-install").addEventListener("click", (e) => {
+        copyText(document.getElementById("install-block").textContent, e.currentTarget);
+      });
+
+      const created = Date.parse("2026-07-29T09:25:01Z");
+      const days = Math.max(1, Math.round((Date.now() - created) / 86400000));
+      document.getElementById("stat-days").textContent = String(days);
+
+      fetch("https://api.github.com/repos/lij768423-svg/grok-register-panel")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (!d) return;
+          document.getElementById("stat-stars").textContent = d.stargazers_count;
+          document.getElementById("stat-forks").textContent = d.forks_count;
+        })
+        .catch(() => {});
+
+      fetch("https://api.github.com/repos/lij768423-svg/grok-register-panel/releases/latest")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (d && d.tag_name) document.getElementById("stat-release").textContent = d.tag_name;
+        })
+        .catch(() => {});
+    </script>
+    <script src="effects.js?v=3"></script>
+  </body>
+</html>

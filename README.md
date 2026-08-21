@@ -7,9 +7,12 @@ Based on [AaronL725/grok-register](https://github.com/AaronL725/grok-register) (
 批量注册 Grok 账号（Camoufox）+ Web 监控面板  
 任务编排 / 代理池 / 邮箱服务 / 域名轮换 / 账号补录 / BFS 检测 / **Token 鉴权**
 
+[介绍页](https://lij768423-svg.github.io/grok-register-panel/) · [Discussions](https://github.com/lij768423-svg/grok-register-panel/discussions)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg)
 ![Stars](https://img.shields.io/github/stars/lij768423-svg/grok-register-panel?style=flat)
+[![Site](https://img.shields.io/badge/site-github.io-111111.svg)](https://lij768423-svg.github.io/grok-register-panel/)
 
 </div>
 
@@ -572,6 +575,8 @@ A: 在控制台使用“账号补录”。待处理模式成功后自动出队�
 
 ## 友情链接
 
+- [介绍页](https://lij768423-svg.github.io/grok-register-panel/) — 一页看面板、安装和声明
+- [Discussions](https://github.com/lij768423-svg/grok-register-panel/discussions) — 版本公告、踩坑和想法
 - [LINUX DO](https://linux.do) — 新的理想型社区
 
 ## License
