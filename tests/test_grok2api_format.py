@@ -84,33 +84,66 @@ def test_write_grok2api_auth_uses_accounts_array():
     assert document["accounts"][0]["user_id"] == "user-fixture-456"
 
 
+class _FakeResponse:
+    def __init__(self, status_code, payload=None, text=""):
+        self.status_code = status_code
+        self._payload = payload
+        self.text = text
+
+    def json(self):
+        return self._payload
+
+
+class _FakeMultipart:
+    def __init__(self):
+        self.parts = []
+        self.closed = False
+
+    def addpart(self, **kwargs):
+        self.parts.append(kwargs)
+
+    def close(self):
+        self.closed = True
+
+
+def _install_fake_http(module, handler, multipart_holder=None):
+    class FakeSession:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def post(self, url, **kwargs):
+            return handler(url, kwargs)
+
+    class TrackingMime(_FakeMultipart):
+        def __init__(self):
+            super().__init__()
+            if multipart_holder is not None:
+                multipart_holder.append(self)
+
+    previous_session = module.requests.Session
+    previous_mime = module.CurlMime
+    module.requests.Session = FakeSession
+    module.CurlMime = TrackingMime
+    return previous_session, previous_mime
+
+
+def _restore_fake_http(module, previous_session, previous_mime):
+    module.requests.Session = previous_session
+    module.CurlMime = previous_mime
+
+
 def test_upload_grok2api_auth_remote_uses_multipart_files(monkeypatch=None):
     import sso_to_auth_json as module
 
     calls = {}
-    multipart_parts = {}
+    mimes = []
 
-    class Response:
-        status_code = 200
-
-    def fake_post(url, **kwargs):
+    def handler(url, kwargs):
         calls["url"] = url
         calls["kwargs"] = kwargs
-        return Response()
+        return _FakeResponse(200)
 
-    class FakeMultipart:
-        @classmethod
-        def from_list(cls, parts):
-            multipart_parts["parts"] = parts
-            return cls()
-
-        def close(self):
-            multipart_parts["closed"] = True
-
-    previous = module.requests.post
-    previous_mime = module.CurlMime
-    module.requests.post = fake_post
-    module.CurlMime = FakeMultipart
+    previous_session, previous_mime = _install_fake_http(module, handler, mimes)
     try:
         name = upload_grok2api_auth_remote(
             "https://grok2api.example.test",
@@ -118,8 +151,7 @@ def test_upload_grok2api_auth_remote_uses_multipart_files(monkeypatch=None):
             {"email": "person@example.test", "provider": "grok_build"},
         )
     finally:
-        module.requests.post = previous
-        module.CurlMime = previous_mime
+        _restore_fake_http(module, previous_session, previous_mime)
 
     assert name == "g2a-person@example.test.json"
     assert calls["url"] == "https://grok2api.example.test/api/admin/v1/accounts/import"
@@ -129,8 +161,10 @@ def test_upload_grok2api_auth_remote_uses_multipart_files(monkeypatch=None):
     }
     assert "files" not in calls["kwargs"]
     assert "multipart" in calls["kwargs"]
-    assert multipart_parts["closed"] is True
-    part = multipart_parts["parts"][0]
+    assert "impersonate" not in calls["kwargs"]
+    assert calls["kwargs"]["proxies"] == {"http": "", "https": "", "all": ""}
+    assert mimes and mimes[0].closed is True
+    part = mimes[0].parts[0]
     assert part["name"] == "files"
     assert part["filename"] == name
     assert part["content_type"] == "application/json"
@@ -144,19 +178,14 @@ def test_login_grok2api_reads_access_token(monkeypatch=None):
 
     calls = {}
 
-    class Response:
-        status_code = 200
-
-        def json(self):
-            return {"data": {"tokens": {"accessToken": "fixture-access-token"}}}
-
-    def fake_post(url, **kwargs):
+    def handler(url, kwargs):
         calls["url"] = url
         calls["kwargs"] = kwargs
-        return Response()
+        return _FakeResponse(
+            200, {"data": {"tokens": {"accessToken": "fixture-access-token"}}}
+        )
 
-    previous = module.requests.post
-    module.requests.post = fake_post
+    previous_session, previous_mime = _install_fake_http(module, handler)
     try:
         token = login_grok2api(
             "https://grok2api.example.test",
@@ -164,7 +193,7 @@ def test_login_grok2api_reads_access_token(monkeypatch=None):
             "password-fixture",
         )
     finally:
-        module.requests.post = previous
+        _restore_fake_http(module, previous_session, previous_mime)
 
     assert token == "fixture-access-token"
     assert calls["url"] == "https://grok2api.example.test/api/admin/v1/auth/login"
@@ -172,6 +201,8 @@ def test_login_grok2api_reads_access_token(monkeypatch=None):
         "username": "admin-fixture",
         "password": "password-fixture",
     }
+    assert "impersonate" not in calls["kwargs"]
+    assert calls["kwargs"]["proxies"] == {"http": "", "https": "", "all": ""}
 
 
 def test_upload_grok2api_auth_remote_can_login_without_management_key():
@@ -179,33 +210,15 @@ def test_upload_grok2api_auth_remote_can_login_without_management_key():
 
     calls = []
 
-    class Response:
-        def __init__(self, status_code, payload=None):
-            self.status_code = status_code
-            self._payload = payload
-            self.text = ""
-
-        def json(self):
-            return self._payload
-
-    def fake_post(url, **kwargs):
+    def handler(url, kwargs):
         calls.append((url, kwargs))
         if url.endswith("/auth/login"):
-            return Response(200, {"data": {"tokens": {"accessToken": "fixture-login-token"}}})
-        return Response(200)
+            return _FakeResponse(
+                200, {"data": {"tokens": {"accessToken": "fixture-login-token"}}}
+            )
+        return _FakeResponse(200)
 
-    class FakeMultipart:
-        @classmethod
-        def from_list(cls, parts):
-            return cls()
-
-        def close(self):
-            pass
-
-    previous_post = module.requests.post
-    previous_mime = module.CurlMime
-    module.requests.post = fake_post
-    module.CurlMime = FakeMultipart
+    previous_session, previous_mime = _install_fake_http(module, handler)
     try:
         upload_grok2api_auth_remote(
             "https://grok2api.example.test",
@@ -216,11 +229,90 @@ def test_upload_grok2api_auth_remote_can_login_without_management_key():
             auth_state={},
         )
     finally:
-        module.requests.post = previous_post
-        module.CurlMime = previous_mime
+        _restore_fake_http(module, previous_session, previous_mime)
 
     assert calls[0][0].endswith("/api/admin/v1/auth/login")
     assert calls[1][1]["headers"]["Authorization"] == "Bearer fixture-login-token"
+
+
+def test_upload_prefers_password_login_over_stale_management_jwt():
+    import sso_to_auth_json as module
+
+    calls = []
+    stale = _jwt({"adminId": 1, "sessionId": 9, "exp": 1})
+
+    def handler(url, kwargs):
+        calls.append(url)
+        if url.endswith("/auth/login"):
+            return _FakeResponse(
+                200, {"data": {"tokens": {"accessToken": "fixture-fresh-token"}}}
+            )
+        return _FakeResponse(200)
+
+    previous_session, previous_mime = _install_fake_http(module, handler)
+    try:
+        upload_grok2api_auth_remote(
+            "https://grok2api.example.test/admin",
+            stale,
+            {"email": "person@example.test", "provider": "grok_build"},
+            username="admin-fixture",
+            password="password-fixture",
+            auth_state={},
+        )
+    finally:
+        _restore_fake_http(module, previous_session, previous_mime)
+
+    assert calls[0].endswith("/api/admin/v1/auth/login")
+    assert calls[1] == "https://grok2api.example.test/api/admin/v1/accounts/import"
+
+
+def test_upload_retries_login_after_401_even_with_management_key():
+    import sso_to_auth_json as module
+
+    calls = []
+    logins = {"count": 0}
+
+    def handler(url, kwargs):
+        auth = kwargs.get("headers", {}).get("Authorization", "")
+        calls.append(url)
+        if url.endswith("/auth/login"):
+            logins["count"] += 1
+            return _FakeResponse(
+                200,
+                {
+                    "data": {
+                        "tokens": {"accessToken": f"fixture-token-{logins['count']}"}
+                    }
+                },
+            )
+        if url.endswith("/auth/refresh"):
+            return _FakeResponse(401, text="invalid")
+        if url.endswith("/accounts/import"):
+            if auth == "Bearer fixture-token-1":
+                return _FakeResponse(
+                    401,
+                    text='{"error":{"code":"adminUnauthorized","message":"管理员登录已失效"}}',
+                )
+            assert auth == "Bearer fixture-token-2"
+            return _FakeResponse(200)
+        return _FakeResponse(500, text="unexpected")
+
+    previous_session, previous_mime = _install_fake_http(module, handler)
+    try:
+        upload_grok2api_auth_remote(
+            "https://grok2api.example.test",
+            "stale-opaque-key",
+            {"email": "person@example.test", "provider": "grok_build"},
+            username="admin-fixture",
+            password="password-fixture",
+            auth_state={},
+        )
+    finally:
+        _restore_fake_http(module, previous_session, previous_mime)
+
+    assert logins["count"] == 2
+    assert calls[0].endswith("/auth/login")
+    assert calls[-1].endswith("/accounts/import")
 
 
 if __name__ == "__main__":
@@ -229,4 +321,6 @@ if __name__ == "__main__":
     test_upload_grok2api_auth_remote_uses_multipart_files()
     test_login_grok2api_reads_access_token()
     test_upload_grok2api_auth_remote_can_login_without_management_key()
+    test_upload_prefers_password_login_over_stale_management_jwt()
+    test_upload_retries_login_after_401_even_with_management_key()
     print("OK grok2api format")

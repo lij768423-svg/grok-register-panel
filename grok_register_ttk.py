@@ -1317,20 +1317,13 @@ def add_sso_to_cpa(raw_token, email="", log_callback=None) -> bool:
         if g2a_remote_url:
             try:
                 account = _s2cpa.token_to_grok2api_account(token, email=email)
-                upload_kwargs = {"proxy": proxy}
-                if not g2a_management_key:
-                    upload_kwargs.update(
-                        {
-                            "username": g2a_username,
-                            "password": g2a_password,
-                            "auth_state": grok2api_auth_state,
-                        }
-                    )
                 name = _s2cpa.upload_grok2api_auth_remote(
                     g2a_remote_url,
                     g2a_management_key,
                     account,
-                    **upload_kwargs,
+                    username=g2a_username,
+                    password=g2a_password,
+                    auth_state=grok2api_auth_state,
                 )
                 _cpa_log(f"已上传 Grok2API 远程 {g2a_remote_url.rstrip('/')}/.../{name}")
                 wrote_ok = True
@@ -3489,7 +3482,7 @@ class GrokRegisterGUI:
             6,
             3,
         )
-        c_label(7, 0, "令牌为空时使用用户名/密码登录；填写令牌则优先使用令牌")
+        c_label(7, 0, "优先用用户名/密码自动登录；管理令牌是 15 分钟 JWT，有账号密码时不再使用")
         self._cpa_detail_widgets[-1].grid(row=7, column=0, columnspan=4, sticky=tk.W, padx=(0, 14), pady=3)
 
         self.email_provider_var.trace_add("write", lambda *_: self._refresh_provider_fields())

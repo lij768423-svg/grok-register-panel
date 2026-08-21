@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Prefer Grok2API username/password login over a stale admin JWT, refresh on HTTP 401, and upload accounts/import directly instead of through the registration proxy.
 - Stop assigning `scripts/playwright-node` (a POSIX shell wrapper) to `PLAYWRIGHT_NODEJS_PATH` on Windows, which previously made Camoufox fail to spawn.
 - Keep POSIX `GROK_PLAYWRIGHT_NODE` on a real node binary so the wrapper cannot `exec` itself. Quote Windows `NODE_OPTIONS --require` paths that contain spaces.
 

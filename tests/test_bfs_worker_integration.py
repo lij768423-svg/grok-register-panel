@@ -95,6 +95,8 @@ def test_grok2api_remote_only_target_is_uploaded():
         "grok2api_auth_dir",
         "grok2api_remote_url",
         "grok2api_management_key",
+        "grok2api_username",
+        "grok2api_password",
         "bfs_check",
         "cpa_token_mode",
     )
@@ -116,6 +118,8 @@ def test_grok2api_remote_only_target_is_uploaded():
                 "grok2api_auth_dir": "",
                 "grok2api_remote_url": "https://grok2api.example.test",
                 "grok2api_management_key": "fixture-management-key",
+                "grok2api_username": "admin-fixture",
+                "grok2api_password": "password-fixture",
                 "bfs_check": False,
                 "cpa_token_mode": "device_protocol",
             }
@@ -155,7 +159,11 @@ def test_grok2api_remote_only_target_is_uploaded():
     assert uploaded[0][0] == "https://grok2api.example.test"
     assert uploaded[0][1] == "fixture-management-key"
     assert uploaded[0][2]["email"] == "person@example.test"
-    assert uploaded[0][3] == {"proxy": ""}
+    kwargs = uploaded[0][3]
+    assert kwargs["username"] == "admin-fixture"
+    assert kwargs["password"] == "password-fixture"
+    assert "auth_state" in kwargs
+    assert "proxy" not in kwargs
 
 
 if __name__ == "__main__":

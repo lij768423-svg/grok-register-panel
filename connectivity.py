@@ -374,17 +374,25 @@ def check_cpa(config: dict, http_get: Callable) -> CheckResult:
             port = u.port or (443 if u.scheme == "https" else 80)
             if not _tcp_open(host, port):
                 return "CPA", False, f"Grok2API 远程不可达 {host}:{port}"
-            if not g2a_key:
+            if g2a_username and g2a_password:
+                g2a_root = g2a_remote.rstrip("/")
+                for suffix in (
+                    "/api/admin/v1/accounts/import",
+                    "/api/admin/v1",
+                    "/admin",
+                ):
+                    if g2a_root.endswith(suffix):
+                        g2a_root = g2a_root[: -len(suffix)].rstrip("/")
+                        break
                 login_resp = http_post(
-                    f"{g2a_remote.rstrip('/')}/api/admin/v1/auth/login",
+                    f"{g2a_root}/api/admin/v1/auth/login",
                     headers={
                         "Accept": "application/json",
                         "Content-Type": "application/json",
                     },
                     json={"username": g2a_username, "password": g2a_password},
                     timeout=8,
-                    proxies={},
-                    impersonate="chrome",
+                    proxies={"http": "", "https": "", "all": ""},
                 )
                 if login_resp.status_code in (401, 403):
                     return "CPA", False, f"Grok2API 登录账号或密码无效 HTTP {login_resp.status_code}"

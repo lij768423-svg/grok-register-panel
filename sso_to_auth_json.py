@@ -1929,6 +1929,56 @@ def _normalize_bearer_token(value: object) -> str:
     return key.strip("`\"'")
 
 
+_GROK2API_DIRECT_PROXIES = {"http": "", "https": "", "all": ""}
+_GROK2API_ADMIN_SUFFIXES = (
+    "/api/admin/v1/accounts/import",
+    "/api/admin/v1",
+    "/admin/api/v1",
+    "/api/admin",
+    "/admin/api",
+    "/admin",
+)
+
+
+def _grok2api_admin_root(base_url: str) -> str:
+    """Normalize a Grok2API origin; strip admin/import suffixes if pasted."""
+    base = str(base_url or "").strip().rstrip("/")
+    for suffix in _GROK2API_ADMIN_SUFFIXES:
+        if base.endswith(suffix):
+            return base[: -len(suffix)].rstrip("/")
+    return base
+
+
+def _grok2api_http_session(state: dict | None = None):
+    """Reuse one curl_cffi session so login Set-Cookie can refresh later."""
+    bag = state if isinstance(state, dict) else {}
+    session = bag.get("session")
+    if session is not None:
+        return session
+    try:
+        session = requests.Session(trust_env=False)
+    except TypeError:
+        session = requests.Session()
+    if isinstance(state, dict):
+        state["session"] = session
+    return session
+
+
+def _grok2api_access_token_usable(value: object) -> bool:
+    """Reject empty or expired JWTs. Opaque keys are treated as still usable."""
+    token = _normalize_bearer_token(value)
+    if not token:
+        return False
+    claims = decode_jwt_payload(token)
+    exp = claims.get("exp")
+    if exp is None:
+        return True
+    try:
+        return int(exp) > int(time.time()) + 30
+    except (TypeError, ValueError):
+        return True
+
+
 def write_grok2api_auth(auth_dir: Path, token: dict, email: str = "") -> Path:
     """写出 Grok2API ``{"accounts": [{...}]}`` auth 文件。"""
     ensure_private_dir(auth_dir)
@@ -1956,9 +2006,17 @@ def login_grok2api(
     password: str,
     timeout: int = 30,
     proxy: str = "",
+    session=None,
+    auth_state: dict | None = None,
 ) -> str:
-    """通过 Grok2API 管理登录接口取得短期 access token。"""
-    base = str(base_url or "").strip().rstrip("/")
+    """通过 Grok2API 管理登录接口取得短期 access token。
+
+    Grok2API 的 access JWT 约 15 分钟过期；refresh token 只在
+    ``grok2api_admin_refresh`` Cookie 里，不在 JSON 响应中。
+    管理接口直连目标实例，忽略注册用住宅代理（``proxy`` 保留兼容）。
+    """
+    del proxy
+    base = _grok2api_admin_root(base_url)
     user = str(username or "").strip()
     secret = str(password or "")
     if not base:
@@ -1966,8 +2024,8 @@ def login_grok2api(
     if not user or not secret:
         raise ValueError("Grok2API 登录需要同时填写用户名和密码")
 
-    proxies = {"http": proxy, "https": proxy} if proxy else None
-    resp = requests.post(
+    sess = session or _grok2api_http_session(auth_state)
+    resp = sess.post(
         f"{base}/api/admin/v1/auth/login",
         headers={
             "Accept": "application/json",
@@ -1975,8 +2033,7 @@ def login_grok2api(
         },
         json={"username": user, "password": secret},
         timeout=timeout,
-        proxies=proxies,
-        impersonate="chrome",
+        proxies=_GROK2API_DIRECT_PROXIES,
     )
     if resp.status_code >= 400:
         detail = _grok2api_response_detail(resp) or "用户名或密码错误"
@@ -1991,7 +2048,79 @@ def login_grok2api(
         access_token = ""
     if not access_token:
         raise RuntimeError("Grok2API 登录响应缺少 data.tokens.accessToken")
+    if isinstance(auth_state, dict):
+        auth_state["access_token"] = access_token
+        auth_state["session"] = sess
     return access_token
+
+
+def _refresh_grok2api_access_token(
+    base_url: str,
+    session,
+    timeout: int = 30,
+) -> str:
+    """Use the login refresh cookie to mint a new access JWT."""
+    base = _grok2api_admin_root(base_url)
+    resp = session.post(
+        f"{base}/api/admin/v1/auth/refresh",
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+        json={},
+        timeout=timeout,
+        proxies=_GROK2API_DIRECT_PROXIES,
+    )
+    if resp.status_code >= 400:
+        return ""
+    try:
+        payload = resp.json()
+    except Exception:
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return ""
+    token = str(data.get("accessToken") or "").strip()
+    if token:
+        return token
+    tokens = data.get("tokens")
+    if isinstance(tokens, dict):
+        return str(tokens.get("accessToken") or "").strip()
+    return ""
+
+
+def _resolve_grok2api_access_token(
+    base: str,
+    management_key: str,
+    username: str,
+    password: str,
+    state: dict,
+    timeout: int,
+    session,
+) -> str:
+    """Prefer username/password login; management_key is only a short-lived JWT fallback."""
+    cached = _normalize_bearer_token(state.get("access_token"))
+    if _grok2api_access_token_usable(cached):
+        return cached
+    user = str(username or "").strip()
+    secret = str(password or "")
+    if user and secret:
+        return login_grok2api(
+            base,
+            user,
+            secret,
+            timeout=timeout,
+            session=session,
+            auth_state=state,
+        )
+    static_key = _normalize_bearer_token(management_key)
+    if _grok2api_access_token_usable(static_key):
+        return static_key
+    if static_key:
+        return static_key
+    raise ValueError("Grok2API 登录需要同时填写用户名和密码")
 
 
 def upload_grok2api_auth_remote(
@@ -2006,45 +2135,41 @@ def upload_grok2api_auth_remote(
 ) -> str:
     """通过 Grok2API 管理接口以 multipart 文件方式导入单个账号。
 
-    未提供管理令牌时，可用用户名和密码自动登录；auth_state 用于同一批次复用
-    access token，避免每个账号都重复登录。
+    有用户名和密码时自动登录并在 401 时刷新/重登；不要把注册代理带到这个
+    管理接口，否则 multipart 的 Authorization 可能被中间代理丢掉。
     """
-    base = str(base_url or "").strip().rstrip("/")
+    del proxy
+    base = _grok2api_admin_root(base_url)
     if not base:
         raise ValueError("grok2api_remote_url 为空")
-    static_key = _normalize_bearer_token(management_key)
     state = auth_state if isinstance(auth_state, dict) else {}
-    key = static_key or _normalize_bearer_token(state.get("access_token"))
-    if not key:
-        key = login_grok2api(
-            base,
-            username,
-            password,
-            timeout=timeout,
-            proxy=proxy,
-        )
-        state["access_token"] = key
+    session = _grok2api_http_session(state)
+    key = _resolve_grok2api_access_token(
+        base,
+        management_key,
+        username,
+        password,
+        state,
+        timeout,
+        session,
+    )
 
-    endpoint = "/api/admin/v1/accounts/import"
-    url = base if base.endswith(endpoint) else f"{base}{endpoint}"
+    url = f"{base}/api/admin/v1/accounts/import"
     name = grok2api_auth_filename(account)
     payload = json.dumps(
         {"accounts": [account]}, ensure_ascii=False, indent=2
     ).encode("utf-8")
-    proxies = {"http": proxy, "https": proxy} if proxy else None
+
     def _upload_once(access_token: str):
-        multipart = CurlMime.from_list(
-            [
-                {
-                    "name": "files",
-                    "filename": name,
-                    "content_type": "application/json",
-                    "data": payload,
-                }
-            ]
-        )
+        multipart = CurlMime()
         try:
-            return requests.post(
+            multipart.addpart(
+                name="files",
+                filename=name,
+                content_type="application/json",
+                data=payload,
+            )
+            return session.post(
                 url,
                 headers={
                     "Accept": "text/event-stream",
@@ -2052,21 +2177,25 @@ def upload_grok2api_auth_remote(
                 },
                 multipart=multipart,
                 timeout=timeout,
-                proxies=proxies,
-                impersonate="chrome",
+                proxies=_GROK2API_DIRECT_PROXIES,
             )
         finally:
             multipart.close()
 
     resp = _upload_once(key)
-    if resp.status_code == 401 and not static_key and username and password:
-        key = login_grok2api(
-            base,
-            username,
-            password,
-            timeout=timeout,
-            proxy=proxy,
-        )
+    if resp.status_code == 401 and str(username or "").strip() and str(password or ""):
+        refreshed = _refresh_grok2api_access_token(base, session, timeout=timeout)
+        if _grok2api_access_token_usable(refreshed):
+            key = refreshed
+        else:
+            key = login_grok2api(
+                base,
+                username,
+                password,
+                timeout=timeout,
+                session=session,
+                auth_state=state,
+            )
         state["access_token"] = key
         resp = _upload_once(key)
     if resp.status_code >= 400:
@@ -2417,22 +2546,22 @@ def main() -> int:
     ap.add_argument(
         "--grok2api-remote-url",
         default=None,
-        help="Grok2API 服务根地址；配合 --grok2api-management-key 上传到 accounts/import",
+        help="Grok2API 服务根地址；配合管理员用户名/密码上传到 accounts/import",
     )
     ap.add_argument(
         "--grok2api-management-key",
         default=None,
-        help="Grok2API 管理端 Bearer token",
+        help="可选的短期 admin JWT；提供用户名/密码时不会使用",
     )
     ap.add_argument(
         "--grok2api-username",
         default=None,
-        help="Grok2API 管理员用户名；未提供管理 token 时用于自动登录",
+        help="Grok2API 管理员用户名；用于 /api/admin/v1/auth/login",
     )
     ap.add_argument(
         "--grok2api-password",
         default=None,
-        help="Grok2API 管理员密码；未提供管理 token 时用于自动登录",
+        help="Grok2API 管理员密码；用于 /api/admin/v1/auth/login",
     )
     ap.add_argument(
         "--prefer",
@@ -2733,7 +2862,6 @@ def main() -> int:
                     args.grok2api_remote_url,
                     args.grok2api_management_key,
                     grok_account,
-                    proxy=args.proxy,
                     username=args.grok2api_username,
                     password=args.grok2api_password,
                     auth_state=grok2api_auth_state,
