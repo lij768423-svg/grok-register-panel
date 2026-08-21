@@ -87,6 +87,7 @@ def test_upload_grok2api_auth_remote_uses_multipart_files(monkeypatch=None):
     import sso_to_auth_json as module
 
     calls = {}
+    multipart_parts = {}
 
     class Response:
         status_code = 200
@@ -96,8 +97,19 @@ def test_upload_grok2api_auth_remote_uses_multipart_files(monkeypatch=None):
         calls["kwargs"] = kwargs
         return Response()
 
+    class FakeMultipart:
+        @classmethod
+        def from_list(cls, parts):
+            multipart_parts["parts"] = parts
+            return cls()
+
+        def close(self):
+            multipart_parts["closed"] = True
+
     previous = module.requests.post
+    previous_mime = module.CurlMime
     module.requests.post = fake_post
+    module.CurlMime = FakeMultipart
     try:
         name = upload_grok2api_auth_remote(
             "https://grok2api.example.test",
@@ -106,6 +118,7 @@ def test_upload_grok2api_auth_remote_uses_multipart_files(monkeypatch=None):
         )
     finally:
         module.requests.post = previous
+        module.CurlMime = previous_mime
 
     assert name == "g2a-person@example.test.json"
     assert calls["url"] == "https://grok2api.example.test/api/admin/v1/accounts/import"
@@ -113,10 +126,14 @@ def test_upload_grok2api_auth_remote_uses_multipart_files(monkeypatch=None):
         "Accept": "text/event-stream",
         "Authorization": "Bearer fixture-management-key",
     }
-    upload = calls["kwargs"]["files"]["files"]
-    assert upload[0] == name
-    assert upload[2] == "application/json"
-    assert json.loads(upload[1].decode("utf-8")) == {
+    assert "files" not in calls["kwargs"]
+    assert "multipart" in calls["kwargs"]
+    assert multipart_parts["closed"] is True
+    part = multipart_parts["parts"][0]
+    assert part["name"] == "files"
+    assert part["filename"] == name
+    assert part["content_type"] == "application/json"
+    assert json.loads(part["data"].decode("utf-8")) == {
         "accounts": [{"email": "person@example.test", "provider": "grok_build"}]
     }
 
