@@ -603,6 +603,7 @@ def take_mailbox(
     log_callback: LogFn = None,
     max_attempts: int = 8,
     skip_empty_inbox: bool = True,
+    exclude_emails: Optional[set[str]] = None,
 ) -> Tuple[str, str]:
     """领取一个未使用的 Outlook 邮箱。
 
@@ -617,6 +618,7 @@ def take_mailbox(
     if not path:
         raise Exception("请配置 outlook_rt_inventory（jsonl 或文本库存路径）")
     attempts = max(1, int(max_attempts or 8))
+    excluded = {str(value or "").strip().lower() for value in (exclude_emails or set())}
     last_err = ""
 
     for _ in range(attempts):
@@ -633,7 +635,7 @@ def take_mailbox(
                 for acc in accounts:
                     cand = acc["email"].strip()
                     key = cand.lower()
-                    if key in used or key in _reserved:
+                    if key in used or key in _reserved or key in excluded:
                         continue
                     if not _create_claim(path, cand, token_key):
                         continue

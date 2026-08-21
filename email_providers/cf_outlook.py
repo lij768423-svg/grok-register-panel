@@ -253,10 +253,17 @@ def first_available_email(inventory_path: str, used_path: str = "") -> str:
     )
 
 
-def take_mailbox(inventory_path: str, *, used_path: str = "", max_attempts: int = 8) -> Tuple[str, str]:
+def take_mailbox(
+    inventory_path: str,
+    *,
+    used_path: str = "",
+    max_attempts: int = 8,
+    exclude_emails: Optional[set[str]] = None,
+) -> Tuple[str, str]:
     path = str(inventory_path or "").strip()
     if not path:
         raise RuntimeError("请配置 cf_outlook_inventory（每行一个邮箱或 JSONL email 字段）")
+    excluded = {str(value or "").strip().lower() for value in (exclude_emails or set())}
     for _ in range(max(1, int(max_attempts or 8))):
         token_key = "cf_outlook:" + secrets.token_urlsafe(12)
         with _lock:
@@ -265,7 +272,7 @@ def take_mailbox(inventory_path: str, *, used_path: str = "", max_attempts: int 
                 for item in load_inventory(path):
                     email = item["email"].strip()
                     key = email.lower()
-                    if key in used or key in _reserved:
+                    if key in used or key in _reserved or key in excluded:
                         continue
                     if not _create_claim(path, email, token_key):
                         continue
@@ -315,11 +322,13 @@ def take_mailbox_from_api(
     api_key: str,
     *,
     max_attempts: int = 8,
+    exclude_emails: Optional[set[str]] = None,
 ) -> Tuple[str, str]:
     """Take an active mailbox from the upstream random-account endpoint."""
     if not normalize_base(base_url):
         raise RuntimeError("未配置 cf_outlook_api_base")
     attempts = max(1, int(max_attempts or 8))
+    excluded = {str(value or "").strip().lower() for value in (exclude_emails or set())}
     last_error: Optional[Exception] = None
     for _ in range(attempts):
         try:
@@ -329,7 +338,7 @@ def take_mailbox_from_api(
             break
         key = email.lower()
         with _lock:
-            if key in _reserved:
+            if key in _reserved or key in excluded:
                 continue
             token_key = "cf_outlook:" + secrets.token_urlsafe(12)
             _reserved.add(key)

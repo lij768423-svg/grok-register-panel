@@ -1889,8 +1889,99 @@ def _record_email_domain_rejected(email: str, message: str = "") -> str:
     return f"域名池拒绝计数 {count}/{threshold}"
 
 
-def get_email_and_token(api_key=None):
-    provider = get_email_provider()
+def _history_email(value: object) -> str:
+    raw = str(value or "").strip()
+    if "----" in raw:
+        raw = raw.split("----", 1)[0].strip()
+    if re.fullmatch(r"[^\s@]+@[^\s@]+", raw):
+        return raw.lower()
+    return ""
+
+
+def _add_history_email(emails: set[str], value: object) -> None:
+    email = _history_email(value)
+    if email:
+        emails.add(email)
+
+
+def _scan_email_history_text(path: Path, emails: set[str]) -> None:
+    if path.name == "mail_credentials.txt" or not path.is_file():
+        return
+    try:
+        for line in path.read_text(encoding="utf-8-sig").splitlines():
+            _add_history_email(emails, line)
+    except (OSError, UnicodeError):
+        return
+
+
+def _scan_email_history_json(path: Path, emails: set[str]) -> None:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, TypeError, ValueError, json.JSONDecodeError):
+        return
+    def visit(value: object) -> None:
+        if isinstance(value, dict):
+            for key in ("email", "name"):
+                _add_history_email(emails, value.get(key))
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    visit(data)
+
+
+def _project_path(value: object) -> Path | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    path = Path(raw).expanduser()
+    return path if path.is_absolute() else Path(APP_DIR) / path
+
+
+def local_registered_emails() -> set[str]:
+    """扫描本地注册产物和 auth 文件，返回已知注册邮箱集合。"""
+    emails: set[str] = set()
+    accounts_root = Path(ACCOUNTS_DIR)
+    if accounts_root.is_dir():
+        for path in accounts_root.glob("*.txt"):
+            _scan_email_history_text(path, emails)
+
+    for config_key in ("cpa_auth_dir", "grok2api_auth_dir"):
+        auth_root = _project_path(config.get(config_key, ""))
+        if not auth_root or not auth_root.is_dir():
+            continue
+        for path in auth_root.glob("*.json"):
+            _scan_email_history_json(path, emails)
+    return emails
+
+
+def _release_duplicate_mailbox(provider: str, email: str, token_key: str) -> None:
+    """释放本地历史重复邮箱，库存型邮箱同时永久标记为已用。"""
+    if provider == "cf_outlook":
+        inventory = get_cf_outlook_inventory()
+        if inventory:
+            cf_outlook_provider.mark_used(
+                email,
+                inventory,
+                get_cf_outlook_used_path(),
+                reason="local_history_duplicate",
+            )
+        cf_outlook_provider.release_reservation(token_key, email)
+    elif provider == "outlook_rt":
+        inventory = get_outlook_rt_inventory()
+        if inventory:
+            outlook_rt_provider.mark_used(
+                email,
+                inventory,
+                get_outlook_rt_used_path(),
+                reason="local_history_duplicate",
+            )
+        outlook_rt_provider.release_reservation(token_key, email)
+
+
+def _get_email_and_token_once(provider: str, api_key=None, exclude_emails=None):
     managed_domain = _managed_domain_for_provider(provider)
     if provider == "yyds":
         return yyds_get_email_and_token(
@@ -1936,15 +2027,40 @@ def get_email_and_token(api_key=None):
     if provider == "inbucket":
         return inbucket_get_email_and_token(domain=managed_domain)
     if provider == "outlook_rt":
-        return outlook_rt_take_mailbox()
+        return outlook_rt_take_mailbox(exclude_emails=exclude_emails)
     if provider == "cf_outlook":
-        return cf_outlook_take_mailbox()
+        return cf_outlook_take_mailbox(exclude_emails=exclude_emails)
     return duckmail_provider.create_mailbox(
         http_get,
         http_post,
         get_duckmail_api_base(),
         api_key=api_key or get_duckmail_api_key(),
         expires_in=0,
+    )
+
+
+def get_email_and_token(api_key=None):
+    """获取未出现在本地注册历史中的邮箱，重复时自动换号。"""
+    provider = get_email_provider()
+    excluded = set(local_registered_emails())
+    max_attempts = 20
+    for _ in range(max_attempts):
+        email, token_key = _get_email_and_token_once(
+            provider,
+            api_key=api_key,
+            exclude_emails=excluded,
+        )
+        email_key = _history_email(email)
+        if not email_key or email_key not in excluded:
+            return email, token_key
+        try:
+            _release_duplicate_mailbox(provider, email, token_key)
+        except Exception as exc:
+            raise RuntimeError(f"释放本地历史重复邮箱失败: {type(exc).__name__}") from exc
+        excluded.add(email_key)
+        print(f"[*] 本地历史已有邮箱，已换号: {mask_email(email)}", flush=True)
+    raise RuntimeError(
+        f"连续 {max_attempts} 次取到本地历史邮箱，未找到新的邮箱，请补充邮箱池"
     )
 
 
@@ -1981,17 +2097,19 @@ def get_cf_outlook_used_path():
     return str(config.get("cf_outlook_used_path", "") or "").strip()
 
 
-def cf_outlook_take_mailbox():
+def cf_outlook_take_mailbox(exclude_emails=None):
     inventory = get_cf_outlook_inventory()
     if inventory:
         return cf_outlook_provider.take_mailbox(
             inventory,
             used_path=get_cf_outlook_used_path(),
+            exclude_emails=exclude_emails,
         )
     return cf_outlook_provider.take_mailbox_from_api(
         http_get,
         get_cf_outlook_api_base(),
         get_cf_outlook_api_key(),
+        exclude_emails=exclude_emails,
     )
 
 
@@ -2018,7 +2136,7 @@ def cf_outlook_get_code(
     )
 
 
-def outlook_rt_take_mailbox():
+def outlook_rt_take_mailbox(exclude_emails=None):
     inv = get_outlook_rt_inventory()
     if not inv:
         raise Exception(
@@ -2041,6 +2159,7 @@ def outlook_rt_take_mailbox():
         log_callback=_log,
         max_attempts=20,
         skip_empty_inbox=True,
+        exclude_emails=exclude_emails,
     )
 
 
