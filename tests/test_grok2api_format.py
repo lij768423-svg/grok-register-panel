@@ -139,6 +139,10 @@ def test_upload_grok2api_auth_remote_uses_multipart_files(monkeypatch=None):
     mimes = []
 
     def handler(url, kwargs):
+        if url.endswith("/auth/login"):
+            return _FakeResponse(
+                200, {"data": {"tokens": {"accessToken": "fixture-login-token"}}}
+            )
         calls["url"] = url
         calls["kwargs"] = kwargs
         return _FakeResponse(200)
@@ -147,8 +151,9 @@ def test_upload_grok2api_auth_remote_uses_multipart_files(monkeypatch=None):
     try:
         name = upload_grok2api_auth_remote(
             "https://grok2api.example.test",
-            "Bearer fixture-management-key",
             {"email": "person@example.test", "provider": "grok_build"},
+            username="admin-fixture",
+            password="password-fixture",
         )
     finally:
         _restore_fake_http(module, previous_session, previous_mime)
@@ -157,7 +162,7 @@ def test_upload_grok2api_auth_remote_uses_multipart_files(monkeypatch=None):
     assert calls["url"] == "https://grok2api.example.test/api/admin/v1/accounts/import"
     assert calls["kwargs"]["headers"] == {
         "Accept": "text/event-stream",
-        "Authorization": "Bearer fixture-management-key",
+        "Authorization": "Bearer fixture-login-token",
     }
     assert "files" not in calls["kwargs"]
     assert "multipart" in calls["kwargs"]
@@ -205,7 +210,7 @@ def test_login_grok2api_reads_access_token(monkeypatch=None):
     assert calls["kwargs"]["proxies"] == {"http": "", "https": "", "all": ""}
 
 
-def test_upload_grok2api_auth_remote_can_login_without_management_key():
+def test_upload_grok2api_auth_remote_logs_in_for_access_token():
     import sso_to_auth_json as module
 
     calls = []
@@ -222,7 +227,6 @@ def test_upload_grok2api_auth_remote_can_login_without_management_key():
     try:
         upload_grok2api_auth_remote(
             "https://grok2api.example.test",
-            "",
             {"email": "person@example.test", "provider": "grok_build"},
             username="admin-fixture",
             password="password-fixture",
@@ -235,38 +239,19 @@ def test_upload_grok2api_auth_remote_can_login_without_management_key():
     assert calls[1][1]["headers"]["Authorization"] == "Bearer fixture-login-token"
 
 
-def test_upload_prefers_password_login_over_stale_management_jwt():
-    import sso_to_auth_json as module
-
-    calls = []
-    stale = _jwt({"adminId": 1, "sessionId": 9, "exp": 1})
-
-    def handler(url, kwargs):
-        calls.append(url)
-        if url.endswith("/auth/login"):
-            return _FakeResponse(
-                200, {"data": {"tokens": {"accessToken": "fixture-fresh-token"}}}
-            )
-        return _FakeResponse(200)
-
-    previous_session, previous_mime = _install_fake_http(module, handler)
+def test_upload_requires_username_and_password():
     try:
         upload_grok2api_auth_remote(
-            "https://grok2api.example.test/admin",
-            stale,
+            "https://grok2api.example.test",
             {"email": "person@example.test", "provider": "grok_build"},
-            username="admin-fixture",
-            password="password-fixture",
-            auth_state={},
         )
-    finally:
-        _restore_fake_http(module, previous_session, previous_mime)
+    except ValueError as exc:
+        assert "用户名和密码" in str(exc)
+    else:
+        raise AssertionError("expected username/password login")
 
-    assert calls[0].endswith("/api/admin/v1/auth/login")
-    assert calls[1] == "https://grok2api.example.test/api/admin/v1/accounts/import"
 
-
-def test_upload_retries_login_after_401_even_with_management_key():
+def test_upload_retries_login_after_401():
     import sso_to_auth_json as module
 
     calls = []
@@ -301,7 +286,6 @@ def test_upload_retries_login_after_401_even_with_management_key():
     try:
         upload_grok2api_auth_remote(
             "https://grok2api.example.test",
-            "stale-opaque-key",
             {"email": "person@example.test", "provider": "grok_build"},
             username="admin-fixture",
             password="password-fixture",
@@ -320,7 +304,7 @@ if __name__ == "__main__":
     test_write_grok2api_auth_uses_accounts_array()
     test_upload_grok2api_auth_remote_uses_multipart_files()
     test_login_grok2api_reads_access_token()
-    test_upload_grok2api_auth_remote_can_login_without_management_key()
-    test_upload_prefers_password_login_over_stale_management_jwt()
-    test_upload_retries_login_after_401_even_with_management_key()
+    test_upload_grok2api_auth_remote_logs_in_for_access_token()
+    test_upload_requires_username_and_password()
+    test_upload_retries_login_after_401()
     print("OK grok2api format")

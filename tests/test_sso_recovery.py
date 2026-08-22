@@ -107,7 +107,8 @@ def test_bfs_config_defaults_are_loaded_for_cli():
                     "cpa_auth_dir": "cpa",
                     "grok2api_auth_dir": "g2a",
                     "grok2api_remote_url": "https://grok2api.example.test",
-                    "grok2api_management_key": "fixture-management-key",
+                    "grok2api_username": "admin-fixture",
+                    "grok2api_password": "password-fixture",
                     "bfs_check": False,
                     "bfs_skip_cpa": True,
                     "bfs_disable_cpa": True,
@@ -134,7 +135,9 @@ def test_bfs_config_defaults_are_loaded_for_cli():
         assert args.cpa_auth_dir == str((Path(temp) / "cpa").resolve())
         assert args.grok2api_auth_dir == str((Path(temp) / "g2a").resolve())
         assert args.grok2api_remote_url == "https://grok2api.example.test"
-        assert args.grok2api_management_key == "fixture-management-key"
+        assert args.grok2api_username == "admin-fixture"
+        assert args.grok2api_password == "password-fixture"
+        assert not hasattr(args, "grok2api_management_key")
 
 
 if __name__ == "__main__":

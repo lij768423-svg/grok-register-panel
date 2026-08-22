@@ -322,7 +322,7 @@ def check_email_api(provider: str, config: dict, http_get: Callable, http_post: 
         return "邮箱API", False, redact_log_line(str(exc))
 
 
-def check_cpa(config: dict, http_get: Callable) -> CheckResult:
+def check_cpa(config: dict, http_get: Callable, http_post: Callable) -> CheckResult:
     if not config.get("cpa_auto_add"):
         return "CPA", True, "未开启 SSO→auth（跳过）"
     auth_dir = str(config.get("cpa_auth_dir", "") or "").strip()
@@ -330,7 +330,6 @@ def check_cpa(config: dict, http_get: Callable) -> CheckResult:
     key = str(config.get("cpa_management_key", "") or "").strip()
     g2a_dir = str(config.get("grok2api_auth_dir", "") or "").strip()
     g2a_remote = str(config.get("grok2api_remote_url", "") or "").strip()
-    g2a_key = str(config.get("grok2api_management_key", "") or "").strip()
     g2a_username = str(config.get("grok2api_username", "") or "").strip()
     g2a_password = str(config.get("grok2api_password", "") or "")
 
@@ -366,46 +365,45 @@ def check_cpa(config: dict, http_get: Callable) -> CheckResult:
             except Exception as exc:
                 return "CPA", False, f"Grok2API 目录不存在且无法创建: {g2a_dir} ({exc})"
     if g2a_remote:
-        if not g2a_key and not (g2a_username and g2a_password):
-            return "CPA", False, "已配 Grok2API 远程地址但缺少管理令牌或登录账号密码"
+        if not (g2a_username and g2a_password):
+            return "CPA", False, "已配 Grok2API 远程地址但缺少登录账号密码"
         try:
             u = urlparse(g2a_remote)
             host = u.hostname or "127.0.0.1"
             port = u.port or (443 if u.scheme == "https" else 80)
             if not _tcp_open(host, port):
                 return "CPA", False, f"Grok2API 远程不可达 {host}:{port}"
-            if g2a_username and g2a_password:
-                g2a_root = g2a_remote.rstrip("/")
-                for suffix in (
-                    "/api/admin/v1/accounts/import",
-                    "/api/admin/v1",
-                    "/admin",
-                ):
-                    if g2a_root.endswith(suffix):
-                        g2a_root = g2a_root[: -len(suffix)].rstrip("/")
-                        break
-                login_resp = http_post(
-                    f"{g2a_root}/api/admin/v1/auth/login",
-                    headers={
-                        "Accept": "application/json",
-                        "Content-Type": "application/json",
-                    },
-                    json={"username": g2a_username, "password": g2a_password},
-                    timeout=8,
-                    proxies={"http": "", "https": "", "all": ""},
-                )
-                if login_resp.status_code in (401, 403):
-                    return "CPA", False, f"Grok2API 登录账号或密码无效 HTTP {login_resp.status_code}"
-                if login_resp.status_code >= 400:
-                    return "CPA", False, f"Grok2API 登录失败 HTTP {login_resp.status_code}"
-                try:
-                    login_payload = login_resp.json()
-                    access_token = login_payload["data"]["tokens"]["accessToken"]
-                except (AttributeError, KeyError, TypeError, ValueError):
-                    return "CPA", False, "Grok2API 登录响应缺少 accessToken"
-                if not str(access_token or "").strip():
-                    return "CPA", False, "Grok2API 登录响应缺少 accessToken"
-                parts.append("Grok2API登录OK")
+            g2a_root = g2a_remote.rstrip("/")
+            for suffix in (
+                "/api/admin/v1/accounts/import",
+                "/api/admin/v1",
+                "/admin",
+            ):
+                if g2a_root.endswith(suffix):
+                    g2a_root = g2a_root[: -len(suffix)].rstrip("/")
+                    break
+            login_resp = http_post(
+                f"{g2a_root}/api/admin/v1/auth/login",
+                headers={
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                },
+                json={"username": g2a_username, "password": g2a_password},
+                timeout=8,
+                proxies={"http": "", "https": "", "all": ""},
+            )
+            if login_resp.status_code in (401, 403):
+                return "CPA", False, f"Grok2API 登录账号或密码无效 HTTP {login_resp.status_code}"
+            if login_resp.status_code >= 400:
+                return "CPA", False, f"Grok2API 登录失败 HTTP {login_resp.status_code}"
+            try:
+                login_payload = login_resp.json()
+                access_token = login_payload["data"]["tokens"]["accessToken"]
+            except (AttributeError, KeyError, TypeError, ValueError):
+                return "CPA", False, "Grok2API 登录响应缺少 accessToken"
+            if not str(access_token or "").strip():
+                return "CPA", False, "Grok2API 登录响应缺少 accessToken"
+            parts.append("Grok2API登录OK")
             parts.append("Grok2API远程TCP可达")
         except Exception as exc:
             return "CPA", False, f"Grok2API 远程探测失败: {redact_log_line(str(exc))}"
@@ -450,7 +448,7 @@ def run_connectivity_checks(config: dict, http_get: Callable, http_post: Callabl
             http_post,
         )
     )
-    results.append(check_cpa(config, http_get))
+    results.append(check_cpa(config, http_get, http_post))
     return results
 
 

@@ -94,7 +94,6 @@ def test_grok2api_remote_only_target_is_uploaded():
         "cpa_management_key",
         "grok2api_auth_dir",
         "grok2api_remote_url",
-        "grok2api_management_key",
         "grok2api_username",
         "grok2api_password",
         "bfs_check",
@@ -117,7 +116,6 @@ def test_grok2api_remote_only_target_is_uploaded():
                 "cpa_management_key": "",
                 "grok2api_auth_dir": "",
                 "grok2api_remote_url": "https://grok2api.example.test",
-                "grok2api_management_key": "fixture-management-key",
                 "grok2api_username": "admin-fixture",
                 "grok2api_password": "password-fixture",
                 "bfs_check": False,
@@ -131,8 +129,8 @@ def test_grok2api_remote_only_target_is_uploaded():
         }
         register._s2cpa.token_to_cpa_record = lambda *_args, **_kwargs: {}
 
-        def fake_upload(base_url, management_key, account, **kwargs):
-            uploaded.append((base_url, management_key, account, kwargs))
+        def fake_upload(base_url, account, **kwargs):
+            uploaded.append((base_url, account, kwargs))
             return "g2a-person@example.test.json"
 
         register._s2cpa.upload_grok2api_auth_remote = fake_upload
@@ -157,13 +155,13 @@ def test_grok2api_remote_only_target_is_uploaded():
     assert result is True
     assert len(uploaded) == 1
     assert uploaded[0][0] == "https://grok2api.example.test"
-    assert uploaded[0][1] == "fixture-management-key"
-    assert uploaded[0][2]["email"] == "person@example.test"
-    kwargs = uploaded[0][3]
+    assert uploaded[0][1]["email"] == "person@example.test"
+    kwargs = uploaded[0][2]
     assert kwargs["username"] == "admin-fixture"
     assert kwargs["password"] == "password-fixture"
     assert "auth_state" in kwargs
     assert "proxy" not in kwargs
+    assert "management_key" not in kwargs
 
 
 if __name__ == "__main__":

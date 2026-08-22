@@ -238,7 +238,6 @@ DEFAULT_CONFIG = {
     "grok2api_auth_dir": "grok2api_auth",
     # 远程 Grok2API：通过 /api/admin/v1/accounts/import 导入
     "grok2api_remote_url": "",
-    "grok2api_management_key": "",
     "grok2api_username": "",
     "grok2api_password": "",
     "mailnest_api_key": "",
@@ -523,6 +522,7 @@ def load_config():
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 loaded = json.load(f)
             config = {**DEFAULT_CONFIG, **loaded}
+            config.pop("grok2api_management_key", None)
         except Exception:
             config = DEFAULT_CONFIG.copy()
     return config
@@ -566,7 +566,9 @@ def parse_account_interval() -> float:
 
 def save_config():
     try:
-        atomic_write_json(CONFIG_FILE, config)
+        payload = dict(config)
+        payload.pop("grok2api_management_key", None)
+        atomic_write_json(CONFIG_FILE, payload)
     except Exception as e:
         print(f"保存配置失败: {e}")
 
@@ -1141,7 +1143,6 @@ def add_sso_to_cpa(raw_token, email="", log_callback=None) -> bool:
     management_key = str(config.get("cpa_management_key", "") or "").strip()
     g2a_dir = str(config.get("grok2api_auth_dir", "") or "").strip()
     g2a_remote_url = str(config.get("grok2api_remote_url", "") or "").strip()
-    g2a_management_key = str(config.get("grok2api_management_key", "") or "").strip()
     g2a_username = str(config.get("grok2api_username", "") or "").strip()
     g2a_password = str(config.get("grok2api_password", "") or "")
 
@@ -1161,10 +1162,10 @@ def add_sso_to_cpa(raw_token, email="", log_callback=None) -> bool:
         if log_callback:
             log_callback("[Debug] 已配置 cpa_remote_url 但未配置 cpa_management_key，跳过远程上传")
         remote_url = ""
-    if g2a_remote_url and not g2a_management_key and not (g2a_username and g2a_password):
+    if g2a_remote_url and not (g2a_username and g2a_password):
         if log_callback:
             log_callback(
-                "[Debug] 已配置 grok2api_remote_url 但未配置管理令牌或登录账号密码，跳过远程上传"
+                "[Debug] 已配置 grok2api_remote_url 但未配置登录账号密码，跳过远程上传"
             )
         g2a_remote_url = ""
     if not auth_dir and not remote_url and not g2a_dir and not g2a_remote_url:
@@ -1319,7 +1320,6 @@ def add_sso_to_cpa(raw_token, email="", log_callback=None) -> bool:
                 account = _s2cpa.token_to_grok2api_account(token, email=email)
                 name = _s2cpa.upload_grok2api_auth_remote(
                     g2a_remote_url,
-                    g2a_management_key,
                     account,
                     username=g2a_username,
                     password=g2a_password,
@@ -3455,7 +3455,6 @@ class GrokRegisterGUI:
         self.cpa_management_key_var = tk.StringVar(value=str(config.get("cpa_management_key", "")))
         self.grok2api_auth_dir_var = tk.StringVar(value=str(config.get("grok2api_auth_dir", "")))
         self.grok2api_remote_url_var = tk.StringVar(value=str(config.get("grok2api_remote_url", "")))
-        self.grok2api_management_key_var = tk.StringVar(value=str(config.get("grok2api_management_key", "")))
         self.grok2api_username_var = tk.StringVar(value=str(config.get("grok2api_username", "")))
         self.grok2api_password_var = tk.StringVar(value=str(config.get("grok2api_password", "")))
         c_label(2, 0, "CPA auth 目录:")
@@ -3468,21 +3467,15 @@ class GrokRegisterGUI:
         c_field(tk_entry(self.cpa_frame, textvariable=self.grok2api_auth_dir_var, width=52), 4, 1, columnspan=3)
         c_label(5, 0, "Grok2API 远程:")
         c_field(tk_entry(self.cpa_frame, textvariable=self.grok2api_remote_url_var, width=34), 5, 1)
-        c_label(5, 2, "管理令牌:")
+        c_label(5, 2, "Grok2API 用户名:")
+        c_field(tk_entry(self.cpa_frame, textvariable=self.grok2api_username_var, width=28), 5, 3)
+        c_label(6, 0, "登录密码:")
         c_field(
-            tk_entry(self.cpa_frame, textvariable=self.grok2api_management_key_var, width=28, show="*"),
-            5,
-            3,
-        )
-        c_label(6, 0, "Grok2API 用户名:")
-        c_field(tk_entry(self.cpa_frame, textvariable=self.grok2api_username_var, width=34), 6, 1)
-        c_label(6, 2, "登录密码:")
-        c_field(
-            tk_entry(self.cpa_frame, textvariable=self.grok2api_password_var, width=28, show="*"),
+            tk_entry(self.cpa_frame, textvariable=self.grok2api_password_var, width=34, show="*"),
             6,
-            3,
+            1,
         )
-        c_label(7, 0, "优先用用户名/密码自动登录；管理令牌是 15 分钟 JWT，有账号密码时不再使用")
+        c_label(7, 0, "远程导入通过管理员账号登录获取令牌，过期后自动刷新/重登")
         self._cpa_detail_widgets[-1].grid(row=7, column=0, columnspan=4, sticky=tk.W, padx=(0, 14), pady=3)
 
         self.email_provider_var.trace_add("write", lambda *_: self._refresh_provider_fields())
@@ -3688,9 +3681,9 @@ class GrokRegisterGUI:
             config["cpa_management_key"] = self.cpa_management_key_var.get().strip()
             config["grok2api_auth_dir"] = self.grok2api_auth_dir_var.get().strip()
             config["grok2api_remote_url"] = self.grok2api_remote_url_var.get().strip()
-            config["grok2api_management_key"] = self.grok2api_management_key_var.get().strip()
             config["grok2api_username"] = self.grok2api_username_var.get().strip()
             config["grok2api_password"] = self.grok2api_password_var.get()
+            config.pop("grok2api_management_key", None)
         except Exception:
             pass
         self.log("[*] 开始连通性检查...")
@@ -3818,9 +3811,9 @@ class GrokRegisterGUI:
         config["cpa_management_key"] = self.cpa_management_key_var.get().strip()
         config["grok2api_auth_dir"] = self.grok2api_auth_dir_var.get().strip()
         config["grok2api_remote_url"] = self.grok2api_remote_url_var.get().strip()
-        config["grok2api_management_key"] = self.grok2api_management_key_var.get().strip()
         config["grok2api_username"] = self.grok2api_username_var.get().strip()
         config["grok2api_password"] = self.grok2api_password_var.get()
+        config.pop("grok2api_management_key", None)
         raw_paths = [x.strip() for x in self.cloudflare_paths_var.get().split(",") if x.strip()]
         if len(raw_paths) >= 4:
             config["cloudflare_path_domains"] = raw_paths[0] if raw_paths[0].startswith("/") else ("/" + raw_paths[0])

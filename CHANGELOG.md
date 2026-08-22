@@ -8,9 +8,13 @@
 - Add an `inbucket` email provider for self-hosted Inbucket instances: generate addresses under a configured receive domain and poll the v1 mailbox API for the xAI verification code. Root domains accept a comma-separated rotation list, and `inbucket_random_levels` can stack 1-3 random subdomain labels per address (wildcard MX required).
 - Treat Windows as a first-class runtime: PowerShell setup/batch/panel scripts, Playwright `node.exe` + EPIPE guard (no bash wrapper), default headless batches, and SOCKS5 `PySocks` as a direct dependency so the panel can import remote residential URLs without Linux mixed ports.
 
+### Changed
+
+- Drop `grok2api_management_key`. Remote Grok2API uploads always log in with username/password for an access JWT instead of reading a stored admin token.
+
 ### Fixed
 
-- Prefer Grok2API username/password login over a stale admin JWT, refresh on HTTP 401, and upload accounts/import directly instead of through the registration proxy.
+- Refresh Grok2API admin login on HTTP 401, and upload accounts/import directly instead of through the registration proxy.
 - Stop assigning `scripts/playwright-node` (a POSIX shell wrapper) to `PLAYWRIGHT_NODEJS_PATH` on Windows, which previously made Camoufox fail to spawn.
 - Keep POSIX `GROK_PLAYWRIGHT_NODE` on a real node binary so the wrapper cannot `exec` itself. Quote Windows `NODE_OPTIONS --require` paths that contain spaces.
 

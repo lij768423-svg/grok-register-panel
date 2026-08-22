@@ -15,6 +15,7 @@ tests=(
   tests/test_windows_runtime.py
   tests/test_sso_recovery.py
   tests/test_grok2api_format.py
+  tests/test_connectivity.py
   tests/test_sso_state.py
   tests/test_registration_risk_gate.py
   tests/test_bfs_detect.py

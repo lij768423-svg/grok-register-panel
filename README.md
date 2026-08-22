@@ -168,8 +168,7 @@ Windows 不要把 `PLAYWRIGHT_NODEJS_PATH` 指到 `scripts/playwright-node`（�
 | `grok2api_auth_dir` | Grok2API 风格 auth 目录 |
 | `cpa_remote_url` / `cpa_management_key` | 远程 CPA Management API（可选） |
 | `grok2api_remote_url` | Grok2API 服务根地址，例如 `https://g2a.example.test`；自动上传到 `/api/admin/v1/accounts/import`（可选） |
-| `grok2api_username` / `grok2api_password` | 管理员账号密码。调用 `/api/admin/v1/auth/login` 获取约 15 分钟的 access JWT，并在失效时自动刷新/重登（推荐） |
-| `grok2api_management_key` | 可选的短期 admin JWT。有用户名/密码时不再使用；不要把浏览器里复制的过期 token 填在这里 |
+| `grok2api_username` / `grok2api_password` | 管理员账号密码。远程导入每次调用 `/api/admin/v1/auth/login` 获取约 15 分钟的 access JWT，并在失效时自动刷新/重登 |
 
 ### 环境变量
 

@@ -2093,39 +2093,32 @@ def _refresh_grok2api_access_token(
 
 def _resolve_grok2api_access_token(
     base: str,
-    management_key: str,
     username: str,
     password: str,
     state: dict,
     timeout: int,
     session,
 ) -> str:
-    """Prefer username/password login; management_key is only a short-lived JWT fallback."""
+    """Login for an access JWT; reuse a still-valid in-memory login token."""
     cached = _normalize_bearer_token(state.get("access_token"))
     if _grok2api_access_token_usable(cached):
         return cached
     user = str(username or "").strip()
     secret = str(password or "")
-    if user and secret:
-        return login_grok2api(
-            base,
-            user,
-            secret,
-            timeout=timeout,
-            session=session,
-            auth_state=state,
-        )
-    static_key = _normalize_bearer_token(management_key)
-    if _grok2api_access_token_usable(static_key):
-        return static_key
-    if static_key:
-        return static_key
-    raise ValueError("Grok2API 登录需要同时填写用户名和密码")
+    if not user or not secret:
+        raise ValueError("Grok2API 登录需要同时填写用户名和密码")
+    return login_grok2api(
+        base,
+        user,
+        secret,
+        timeout=timeout,
+        session=session,
+        auth_state=state,
+    )
 
 
 def upload_grok2api_auth_remote(
     base_url: str,
-    management_key: str,
     account: dict,
     timeout: int = 30,
     proxy: str = "",
@@ -2135,8 +2128,8 @@ def upload_grok2api_auth_remote(
 ) -> str:
     """通过 Grok2API 管理接口以 multipart 文件方式导入单个账号。
 
-    有用户名和密码时自动登录并在 401 时刷新/重登；不要把注册代理带到这个
-    管理接口，否则 multipart 的 Authorization 可能被中间代理丢掉。
+    每次用管理员账号登录拿 access JWT，并在 401 时刷新/重登。不要把注册
+    代理带到这个管理接口，否则 multipart 的 Authorization 可能被中间代理丢掉。
     """
     del proxy
     base = _grok2api_admin_root(base_url)
@@ -2146,7 +2139,6 @@ def upload_grok2api_auth_remote(
     session = _grok2api_http_session(state)
     key = _resolve_grok2api_access_token(
         base,
-        management_key,
         username,
         password,
         state,
@@ -2443,9 +2435,6 @@ def apply_config_defaults(args) -> None:
     args.grok2api_remote_url = getattr(args, "grok2api_remote_url", None) or str(
         config.get("grok2api_remote_url") or ""
     ).strip()
-    args.grok2api_management_key = getattr(args, "grok2api_management_key", None) or str(
-        config.get("grok2api_management_key") or ""
-    ).strip()
     args.grok2api_username = getattr(args, "grok2api_username", None) or str(
         config.get("grok2api_username") or ""
     ).strip()
@@ -2546,12 +2535,7 @@ def main() -> int:
     ap.add_argument(
         "--grok2api-remote-url",
         default=None,
-        help="Grok2API 服务根地址；配合管理员用户名/密码上传到 accounts/import",
-    )
-    ap.add_argument(
-        "--grok2api-management-key",
-        default=None,
-        help="可选的短期 admin JWT；提供用户名/密码时不会使用",
+        help="Grok2API 服务根地址；配合管理员用户名/密码登录后上传到 accounts/import",
     )
     ap.add_argument(
         "--grok2api-username",
@@ -2702,16 +2686,8 @@ def main() -> int:
         ap.error("使用 --cpa-remote-url 时必须同时提供 --cpa-management-key")
     if args.cpa_management_key and not args.cpa_remote_url:
         ap.error("使用 --cpa-management-key 时必须同时提供 --cpa-remote-url")
-    if (
-        args.grok2api_remote_url
-        and not args.grok2api_management_key
-        and not (args.grok2api_username and args.grok2api_password)
-    ):
-        ap.error(
-            "使用 --grok2api-remote-url 时必须提供管理 token，或同时提供 --grok2api-username 和 --grok2api-password"
-        )
-    if args.grok2api_management_key and not args.grok2api_remote_url:
-        ap.error("使用 --grok2api-management-key 时必须同时提供 --grok2api-remote-url")
+    if args.grok2api_remote_url and not (args.grok2api_username and args.grok2api_password):
+        ap.error("使用 --grok2api-remote-url 时必须同时提供 --grok2api-username 和 --grok2api-password")
     if (args.grok2api_username or args.grok2api_password) and not args.grok2api_remote_url:
         ap.error("使用 Grok2API 用户名/密码时必须同时提供 --grok2api-remote-url")
 
@@ -2860,7 +2836,6 @@ def main() -> int:
                 grok_account = token_to_grok2api_account(token, email=email)
                 name = upload_grok2api_auth_remote(
                     args.grok2api_remote_url,
-                    args.grok2api_management_key,
                     grok_account,
                     username=args.grok2api_username,
                     password=args.grok2api_password,
