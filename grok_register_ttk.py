@@ -294,6 +294,10 @@ class RegistrationRiskDenied(Exception):
     """账号已创建，但服务端将本次注册裁决为 OAuth 不可用。"""
 
 
+class MailboxInventoryExhausted(Exception):
+    """Shared mailbox inventory is empty; this worker must stop taking new accounts."""
+
+
 
 FAIL_DOMAIN = "domain_rejected"
 FAIL_RISK = "registration_risk"
@@ -304,6 +308,7 @@ FAIL_STUCK = "stuck_retry"
 FAIL_SSO = "sso_timeout"
 FAIL_TURNSTILE = "turnstile"
 FAIL_PROFILE = "profile_fill"
+FAIL_MAILBOX = "mailbox_exhausted"
 FAIL_OTHER = "other"
 
 
@@ -350,6 +355,7 @@ FAIL_LABELS = {
     FAIL_SSO: "SSO超时",
     FAIL_TURNSTILE: "资料页Turnstile",
     FAIL_PROFILE: "资料填写",
+    FAIL_MAILBOX: "邮箱库存",
     FAIL_OTHER: "其它",
 }
 
@@ -457,11 +463,22 @@ def record_register_result(
     return rec
 
 
+def is_mailbox_inventory_exhausted(exc) -> bool:
+    if isinstance(exc, MailboxInventoryExhausted):
+        return True
+    if isinstance(exc, outlook_rt_provider.InventoryExhausted):
+        return True
+    msg = str(exc or "")
+    return "Outlook RT 库存耗尽" in msg or "cf_outlook 库存耗尽" in msg
+
+
 def classify_failure(exc) -> str:
     if isinstance(exc, EmailDomainRejected):
         return FAIL_DOMAIN
     if isinstance(exc, RegistrationRiskDenied):
         return FAIL_RISK
+    if is_mailbox_inventory_exhausted(exc):
+        return FAIL_MAILBOX
     msg = str(exc or "")
     low = msg.lower()
     if isinstance(exc, AccountRetryNeeded) or "达到最大重试" in msg or "流程卡住" in msg:
@@ -2150,7 +2167,7 @@ def cf_outlook_get_code(
 def outlook_rt_take_mailbox(exclude_emails=None):
     inv = get_outlook_rt_inventory()
     if not inv:
-        raise Exception(
+        raise MailboxInventoryExhausted(
             "请在配置中填写 outlook_rt_inventory（jsonl/文本库存路径，"
             "字段 email + refresh_token）"
         )
@@ -2161,17 +2178,20 @@ def outlook_rt_take_mailbox(exclude_emails=None):
         except Exception:
             print(msg, flush=True)
 
-    return outlook_rt_provider.take_mailbox(
-        inv,
-        used_path=get_outlook_rt_used_path(),
-        default_client_id=get_outlook_rt_client_id(),
-        http_post=http_post,
-        http_get=http_get,
-        log_callback=_log,
-        max_attempts=20,
-        skip_empty_inbox=False,
-        exclude_emails=exclude_emails,
-    )
+    try:
+        return outlook_rt_provider.take_mailbox(
+            inv,
+            used_path=get_outlook_rt_used_path(),
+            default_client_id=get_outlook_rt_client_id(),
+            http_post=http_post,
+            http_get=http_get,
+            log_callback=_log,
+            max_attempts=20,
+            skip_empty_inbox=False,
+            exclude_emails=exclude_emails,
+        )
+    except outlook_rt_provider.InventoryExhausted as exc:
+        raise MailboxInventoryExhausted(str(exc)) from exc
 
 
 def outlook_rt_get_code(
@@ -4138,6 +4158,15 @@ class GrokRegisterGUI:
                 except RegistrationCancelled:
                     wlog("[!] 注册被用户停止")
                     break
+                except MailboxInventoryExhausted as exc:
+                    kind = self._record_failure(exc)
+                    retry_count_for_slot = 0
+                    wlog(
+                        f"[-] 注册失败 [{FAIL_LABELS.get(kind, kind)}]: "
+                        f"{redact_sensitive_log_line(str(exc))}"
+                    )
+                    wlog("[!] 邮箱库存已耗尽，停止当前线程，不再继续注册")
+                    break
                 except EmailDomainRejected as exc:
                     kind = self._record_failure(exc)
                     retry_count_for_slot = 0
@@ -4510,6 +4539,36 @@ def run_registration_cli(count):
                                 f"{redact_sensitive_log_line(str(exc))}"
                             )
                             mark_slot_completed()
+                    except MailboxInventoryExhausted as exc:
+                        kind = classify_failure(exc)
+                        local_fail_stats[kind] = local_fail_stats.get(kind, 0) + 1
+                        local_fail += 1
+                        i += 1
+                        retry = 0
+                        cli_log(
+                            f"[W{wid+1}] [-] 失败 [{FAIL_LABELS.get(kind, kind)}]: "
+                            f"{redact_sensitive_log_line(str(exc))}"
+                        )
+                        record_register_result(
+                            "fail",
+                            email or "",
+                            kind=kind,
+                            detail=str(exc)[:300],
+                            worker=f"W{wid+1}",
+                            log_callback=lambda m: cli_log(f"[W{wid+1}] {m}"),
+                        )
+                        mark_slot_completed()
+                        remaining = max(n - i, 0)
+                        if remaining:
+                            local_fail += remaining
+                            local_fail_stats[kind] = (
+                                local_fail_stats.get(kind, 0) + remaining
+                            )
+                            mark_slot_completed(remaining)
+                        cli_log(
+                            f"[W{wid+1}] [!] 邮箱库存已耗尽，停止当前线程，不再继续注册"
+                        )
+                        worker_stop = True
                     except Exception as exc:
                         msg = str(exc)
                         blank_ui = (
@@ -4611,7 +4670,7 @@ def run_registration_cli(count):
                         elif local_success > 0 and local_success % 3 == 0:
                             rotate_idx += 1
                     finally:
-                        if i < n and not controller.should_stop():
+                        if i < n and not controller.should_stop() and not worker_stop:
                             try:
                                 stop_browser()
                                 # 冷却：避免热重启立刻撞 SPA 空壳
@@ -4906,6 +4965,30 @@ def run_registration_cli(count):
                         log_callback=cli_log,
                     )
                     mark_slot_completed()
+            except MailboxInventoryExhausted as exc:
+                kind = _cli_record_failure(exc)
+                retry_count_for_slot = 0
+                i += 1
+                cli_log(
+                    f"[-] 注册失败 [{FAIL_LABELS.get(kind, kind)}]: "
+                    f"{redact_sensitive_log_line(str(exc))}"
+                )
+                record_register_result(
+                    "fail",
+                    email or "",
+                    kind=kind,
+                    detail=str(exc),
+                    worker="W1",
+                    log_callback=cli_log,
+                )
+                mark_slot_completed()
+                remaining = max(count - i, 0)
+                if remaining:
+                    fail_count += remaining
+                    fail_stats[kind] = fail_stats.get(kind, 0) + remaining
+                    mark_slot_completed(remaining)
+                cli_log("[!] 邮箱库存已耗尽，停止当前线程，不再继续注册")
+                break
             except Exception as exc:
                 kind = _cli_record_failure(exc)
                 retry_count_for_slot = 0

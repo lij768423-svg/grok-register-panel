@@ -89,7 +89,7 @@ def test_take_mark_used_and_stats():
         try:
             outlook_rt.take_mailbox(str(inv))
             raise AssertionError("expected inventory exhausted")
-        except Exception as exc:
+        except outlook_rt.InventoryExhausted as exc:
             assert "耗尽" in str(exc)
 
         outlook_rt.mark_used(email1, str(inv))

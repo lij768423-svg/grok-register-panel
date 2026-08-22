@@ -15,6 +15,7 @@
 
 ### Fixed
 
+- Stop the current registration worker immediately when Outlook RT inventory is exhausted, instead of retrying empty stock as a generic failure.
 - Refresh Grok2API admin login on HTTP 401, and upload accounts/import directly instead of through the registration proxy.
 - Stop assigning `scripts/playwright-node` (a POSIX shell wrapper) to `PLAYWRIGHT_NODEJS_PATH` on Windows, which previously made Camoufox fail to spawn.
 - Keep POSIX `GROK_PLAYWRIGHT_NODE` on a real node binary so the wrapper cannot `exec` itself. Quote Windows `NODE_OPTIONS --require` paths that contain spaces.

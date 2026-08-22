@@ -25,6 +25,10 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from email_providers.common import extract_verification_code
+
+
+class InventoryExhausted(RuntimeError):
+    """No unused Outlook RT mailbox remains after used/reserved/dead checks."""
 from secure_files import (
     append_private_text,
     atomic_write_text,
@@ -722,7 +726,7 @@ def take_mailbox(
 
     used_file = used_path_for(path, used_path)
     hint = f"；最后预检错误: {last_err}" if last_err else ""
-    raise Exception(
+    raise InventoryExhausted(
         f"Outlook RT 库存耗尽或预检均失败（已用/预留/死号），文件: {path}；"
         f"used={used_file}{hint}"
     )
