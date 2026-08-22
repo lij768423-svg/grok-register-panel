@@ -236,6 +236,13 @@ def test_disable_delete_and_legacy_import():
         deleted = proxy_store.delete_proxy(proxy_id)
         assert deleted["deleted_id"] == proxy_id
         assert deleted["summary"]["total"] == 1
+        cleared = proxy_store.delete_all_proxies()
+        assert cleared["deleted_count"] == 1
+        assert cleared["summary"]["total"] == 0
+        assert cleared["items"] == []
+        empty = proxy_store.delete_all_proxies()
+        assert empty["deleted_count"] == 0
+        assert empty["summary"]["total"] == 0
 
 
 def test_async_probe_job_persists_health():

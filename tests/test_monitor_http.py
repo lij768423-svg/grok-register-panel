@@ -242,6 +242,34 @@ def test_proxy_api_auth_mutations_and_redaction():
             )
             assert status == 200
             assert json.loads(body)["summary"]["total"] == 0
+
+            status, _, body = request(
+                base + "/api/proxies/import",
+                token=token,
+                method="POST",
+                body=json.dumps(
+                    {
+                        "proxies": (
+                            f"proxy.example:8080:worker:{secret}\n"
+                            "http://proxy.example:8081"
+                        )
+                    }
+                ).encode("utf-8"),
+            )
+            assert status == 200
+            assert json.loads(body)["imported_count"] == 2
+            status, _, _ = request(base + "/api/proxies", method="DELETE")
+            assert status == 401
+            status, _, body = request(
+                base + "/api/proxies",
+                token=token,
+                method="DELETE",
+            )
+            assert status == 200
+            cleared = json.loads(body)
+            assert cleared["deleted_count"] == 2
+            assert cleared["summary"]["total"] == 0
+            assert secret not in body.decode("utf-8")
         finally:
             server.shutdown()
             server.server_close()

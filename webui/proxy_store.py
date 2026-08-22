@@ -641,6 +641,17 @@ def delete_proxy(proxy_id: str) -> dict:
     return result
 
 
+def delete_all_proxies() -> dict:
+    with exclusive_file_lock(LOCK_PATH):
+        state, _ = _read_unlocked()
+        deleted_count = len(state["items"])
+        state["items"] = []
+        _write_unlocked(state)
+    result = read_proxy_pool()
+    result["deleted_count"] = deleted_count
+    return result
+
+
 def worker_proxy_snapshot() -> dict:
     """Return secret worker URLs plus whether a managed pool is configured."""
     with exclusive_file_lock(LOCK_PATH):

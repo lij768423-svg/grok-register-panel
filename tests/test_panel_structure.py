@@ -130,6 +130,8 @@ def test_proxy_pool_panel_structure():
     assert 'function testProxies(' in mon
     assert 'function setProxyEnabled(' in mon
     assert 'function deleteProxyItem(' in mon
+    assert 'function deleteAllProxies(' in mon
+    assert 'id="proxy-delete-all"' in html
     assert '/api/proxies/import' in mon
     assert '/api/proxies/test' in mon
     assert 'def do_PATCH(self):' in mon

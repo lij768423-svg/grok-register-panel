@@ -34,6 +34,7 @@ from runtime_platform import (
 try:
     from webui.blacklist_store import read_blacklist as read_blacklist_state
     from webui.proxy_store import (
+        delete_all_proxies,
         delete_proxy,
         import_legacy_proxies,
         import_proxies,
@@ -77,6 +78,7 @@ try:
 except ImportError:  # running as script from webui/
     from blacklist_store import read_blacklist as read_blacklist_state  # type: ignore
     from proxy_store import (  # type: ignore
+        delete_all_proxies,
         delete_proxy,
         import_legacy_proxies,
         import_proxies,
@@ -1392,6 +1394,7 @@ HTML = r"""<!DOCTYPE html>
   .proxy-list-section { margin-top: 18px; }
   .proxy-list-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 10px; }
   .proxy-list-head h2 { margin: 0; font-size: 13px; }
+  .proxy-list-actions { flex: 0 0 auto; }
   .proxy-table-wrap { overflow: auto; border: 1px solid var(--border); background: var(--surface-raised); }
   .proxy-table { min-width: 990px; table-layout: fixed; }
   .proxy-table th:nth-child(1) { width: 82px; }
@@ -1870,6 +1873,8 @@ HTML = r"""<!DOCTYPE html>
     .proxy-import-actions .button-group { justify-content: stretch; }
     .proxy-import-actions button { flex: 1 1 auto; }
     .proxy-list-head { align-items: flex-start; flex-direction: column; }
+    .proxy-list-actions { width: 100%; justify-content: stretch; }
+    .proxy-list-actions button { flex: 1 1 auto; }
     .domain-view { inset-block-start: 60px; }
     .domain-view-inner { width: calc(100% - 24px); padding: 20px 0 34px; }
     .domain-view-heading { align-items: flex-start; flex-direction: column; margin-bottom: 16px; padding-bottom: 16px; }
@@ -2193,7 +2198,10 @@ HTML = r"""<!DOCTYPE html>
             <h2>代理明细</h2>
             <div class="proxy-job mono" id="proxy-test-status" role="status" aria-live="polite">未开始检测</div>
           </div>
-          <button id="proxy-test-all" onclick="testProxies()">检测全部</button>
+          <div class="button-group proxy-list-actions">
+            <button id="proxy-test-all" onclick="testProxies()">检测全部</button>
+            <button class="danger" id="proxy-delete-all" onclick="deleteAllProxies()">全部删除</button>
+          </div>
         </div>
         <div class="proxy-table-wrap">
           <table class="proxy-table">
@@ -2832,6 +2840,8 @@ function renderProxyPool(data) {
   const job = proxyData.test_job || {};
   const testButton = document.getElementById("proxy-test-all");
   testButton.disabled = !!job.running || !(summary.enabled > 0);
+  const deleteAllButton = document.getElementById("proxy-delete-all");
+  if (deleteAllButton) deleteAllButton.disabled = !(summary.total > 0);
   document.getElementById("proxy-test-status").textContent = job.running
     ? ("检测中 " + (job.completed || 0) + "/" + (job.total || 0) + "，健康 " + (job.healthy || 0) + "，失败 " + (job.failed || 0))
     : (job.finished_at ? ("上次检测：健康 " + (job.healthy || 0) + "，失败 " + (job.failed || 0)) : "未开始检测");
@@ -2936,6 +2946,22 @@ async function deleteProxyItem(id) {
     renderProxyPool(result);
     setMsg("proxy-msg", "代理已删除", "ok");
   } catch (e) { setMsg("proxy-msg", String(e.message || e), "err"); }
+}
+async function deleteAllProxies() {
+  const total = (proxyData && proxyData.summary && proxyData.summary.total) || 0;
+  if (!total) { setMsg("proxy-msg", "代理池已为空", ""); return; }
+  if (!confirm("删除代理池中的全部 " + total + " 条代理？此操作不可恢复。")) return;
+  const button = document.getElementById("proxy-delete-all");
+  if (button) button.disabled = true;
+  setMsg("proxy-msg", "正在删除全部代理…", "");
+  try {
+    const result = await api("/api/proxies", { method: "DELETE" });
+    renderProxyPool(result);
+    setMsg("proxy-msg", "已删除全部 " + (result.deleted_count || total) + " 条代理", "ok");
+  } catch (e) {
+    setMsg("proxy-msg", String(e.message || e), "err");
+    await refreshProxies(false);
+  }
 }
 function currentEmailProviderDefinition(provider = selectedEmailProvider) {
   return (emailProviderData && emailProviderData.providers || []).find(item => item.id === provider) || null;
@@ -4216,6 +4242,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_DELETE(self):
         u = urlparse(self.path)
+        if u.path == "/api/proxies":
+            if not self._require_write():
+                return
+            try:
+                self._json(200, delete_all_proxies())
+            except Exception as exc:
+                self._json(500, {"ok": False, "error": redact_log_line(str(exc))})
+            return
         proxy_match = re.fullmatch(r"/api/proxies/([a-f0-9]{20})", u.path)
         domain_match = re.fullmatch(r"/api/email-domains/([a-f0-9]{20})", u.path)
         if proxy_match is None and domain_match is None:
