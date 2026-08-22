@@ -602,7 +602,7 @@ def take_mailbox(
     http_get: Optional[HttpGet] = None,
     log_callback: LogFn = None,
     max_attempts: int = 8,
-    skip_empty_inbox: bool = True,
+    skip_empty_inbox: bool = False,
     exclude_emails: Optional[set[str]] = None,
 ) -> Tuple[str, str]:
     """领取一个未使用的 Outlook 邮箱。
@@ -610,7 +610,7 @@ def take_mailbox(
     若传入 http_post，会在取号后立刻 refresh 预检：
     - 成功：返回 (email, token_key)
     - 失败：mark_used 并换下一个，避免把死 RT 带进 180s 等码
-    若同时传入 http_get 且 skip_empty_inbox，Inbox 为 0 的号直接跳过。
+    新买的号 Inbox 通常是 0，默认不因空箱弃号。skip_empty_inbox 仅在明确只要热号时开启。
 
     返回 (email, token_key)。token_key 供 wait_for_code 使用。
     """

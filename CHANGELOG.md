@@ -11,6 +11,7 @@
 ### Changed
 
 - Drop `grok2api_management_key`. Remote Grok2API uploads always log in with username/password for an access JWT instead of reading a stored admin token.
+- Keep newly purchased Outlook RT mailboxes that still have an empty Inbox; only skip empty boxes when `skip_empty_inbox` is explicitly enabled.
 
 ### Fixed
 

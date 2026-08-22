@@ -2154,7 +2154,7 @@ def outlook_rt_take_mailbox(exclude_emails=None):
             "请在配置中填写 outlook_rt_inventory（jsonl/文本库存路径，"
             "字段 email + refresh_token）"
         )
-    # 取号后立刻 refresh + Inbox 预检：空箱/死 RT 秒退并 mark used
+    # 取号后立刻 refresh 预检：死 RT 秒退并 mark used。新号 Inbox=0 照常领用。
     def _log(msg: str) -> None:
         try:
             cli_log(msg)
@@ -2169,7 +2169,7 @@ def outlook_rt_take_mailbox(exclude_emails=None):
         http_get=http_get,
         log_callback=_log,
         max_attempts=20,
-        skip_empty_inbox=True,
+        skip_empty_inbox=False,
         exclude_emails=exclude_emails,
     )
 

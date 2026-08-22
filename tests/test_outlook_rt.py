@@ -516,6 +516,48 @@ def test_take_mailbox_precheck_skips_dead_rt():
         }
 
 
+def test_take_mailbox_keeps_empty_inbox_by_default():
+    with tempfile.TemporaryDirectory() as tmp:
+        inv = Path(tmp) / "stock.jsonl"
+        _write_jsonl(
+            inv,
+            [{"email": "empty@outlook.com", "refresh_token": "RT_EMPTY"}],
+        )
+        outlook_rt._reserved.clear()
+        outlook_rt._token_map.clear()
+
+        class Resp:
+            def __init__(self, payload, status=200):
+                self._payload = payload
+                self.status_code = status
+                self.text = json.dumps(payload)
+
+            def json(self):
+                return self._payload
+
+        def http_post(url, **kwargs):
+            return Resp({"access_token": "AT", "expires_in": 3600})
+
+        def http_get(url, **kwargs):
+            return Resp({"totalItemCount": 0, "unreadItemCount": 0})
+
+        logs = []
+        email, token = outlook_rt.take_mailbox(
+            str(inv),
+            http_post=http_post,
+            http_get=http_get,
+            log_callback=logs.append,
+            max_attempts=3,
+        )
+        assert email == "empty@outlook.com"
+        assert token.startswith("outlook_rt:")
+        used = outlook_rt.used_path_for(str(inv))
+        assert not used.exists() or "empty@outlook.com" not in used.read_text(
+            encoding="utf-8"
+        )
+        assert not any("Inbox=0" in line for line in logs)
+
+
 def test_take_mailbox_skips_empty_inbox():
     with tempfile.TemporaryDirectory() as tmp:
         inv = Path(tmp) / "stock.jsonl"
@@ -710,6 +752,7 @@ if __name__ == "__main__":
     test_wait_for_code_aborts_empty_inbox_and_marks_used()
     test_provider_store_outlook_rt_schema()
     test_take_mailbox_precheck_skips_dead_rt()
+    test_take_mailbox_keeps_empty_inbox_by_default()
     test_take_mailbox_skips_empty_inbox()
     test_wait_for_code_fast_fail_on_dead_refresh()
     test_probe_persists_rotated_refresh_token_without_consuming_inventory()
