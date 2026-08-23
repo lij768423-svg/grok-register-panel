@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from sso_to_auth_json import (  # noqa: E402
+    list_grok2api_accounts,
     login_grok2api,
     token_to_grok2api_account,
     upload_grok2api_auth_remote,
@@ -112,6 +113,9 @@ def _install_fake_http(module, handler, multipart_holder=None):
             pass
 
         def post(self, url, **kwargs):
+            return handler(url, kwargs)
+
+        def get(self, url, **kwargs):
             return handler(url, kwargs)
 
     class TrackingMime(_FakeMultipart):
@@ -299,6 +303,75 @@ def test_upload_retries_login_after_401():
     assert calls[-1].endswith("/accounts/import")
 
 
+def test_list_grok2api_accounts_pages_and_redacts():
+    import sso_to_auth_json as module
+
+    calls = []
+
+    def handler(url, kwargs):
+        calls.append((url, kwargs))
+        if str(url).endswith("/auth/login"):
+            return _FakeResponse(
+                200, {"data": {"tokens": {"accessToken": "fixture-list-token"}}}
+            )
+        params = kwargs.get("params") or {}
+        page = int(params.get("page") or 1)
+        if page == 1:
+            return _FakeResponse(
+                200,
+                {
+                    "data": {
+                        "items": [
+                            {
+                                "email": "one@example.test",
+                                "authStatus": "active",
+                                "enabled": True,
+                                "access_token": "secret-must-not-leak",
+                            }
+                        ],
+                        "page": 1,
+                        "pageSize": 1,
+                        "total": 2,
+                    }
+                },
+            )
+        return _FakeResponse(
+            200,
+            {
+                "data": {
+                    "items": [
+                        {
+                            "name": "two@example.test",
+                            "authStatus": "expired",
+                            "enabled": False,
+                        }
+                    ],
+                    "page": 2,
+                    "pageSize": 1,
+                    "total": 2,
+                }
+            },
+        )
+
+    previous_session, previous_mime = _install_fake_http(module, handler)
+    try:
+        rows = list_grok2api_accounts(
+            "https://grok2api.example.test",
+            "admin-fixture",
+            "password-fixture",
+            page_size=1,
+        )
+    finally:
+        _restore_fake_http(module, previous_session, previous_mime)
+
+    assert [row["email"] for row in rows] == ["one@example.test", "two@example.test"]
+    assert rows[0]["auth_status"] == "active"
+    assert "secret-must-not-leak" not in json.dumps(rows)
+    assert calls[0][0].endswith("/auth/login")
+    assert "/api/admin/v1/accounts" in calls[1][0]
+    assert calls[1][1]["headers"]["Authorization"] == "Bearer fixture-list-token"
+
+
 if __name__ == "__main__":
     test_token_maps_to_grok2api_account()
     test_write_grok2api_auth_uses_accounts_array()
@@ -307,4 +380,5 @@ if __name__ == "__main__":
     test_upload_grok2api_auth_remote_logs_in_for_access_token()
     test_upload_requires_username_and_password()
     test_upload_retries_login_after_401()
+    test_list_grok2api_accounts_pages_and_redacts()
     print("OK grok2api format")

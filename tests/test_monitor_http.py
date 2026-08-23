@@ -115,6 +115,11 @@ def test_monitor_http_auth_and_headers():
         status, _, body = request(base + "/api/sso-state", token=token)
         assert status == 200
         assert "sources" in json.loads(body)
+        status, _, _ = request(base + "/api/reauth")
+        assert status == 401
+        status, _, body = request(base + "/api/reauth", token=token)
+        assert status == 200
+        assert json.loads(body)["ok"] is True
         status, _, body = request(
             base + "/api/sso-state/start",
             method="POST",

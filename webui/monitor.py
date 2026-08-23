@@ -68,6 +68,12 @@ try:
         start_sso_state_scan,
         stop_sso_state_scan,
     )
+    from webui.reauth_ops import (
+        compare_sso_to_remote,
+        reauth_status,
+        start_reauth_missing,
+        stop_reauth,
+    )
     from webui.security_utils import (
         check_token_optional_read,
         expected_token,
@@ -111,6 +117,12 @@ except ImportError:  # running as script from webui/
         sso_state_status,
         start_sso_state_scan,
         stop_sso_state_scan,
+    )
+    from reauth_ops import (  # type: ignore
+        compare_sso_to_remote,
+        reauth_status,
+        start_reauth_missing,
+        stop_reauth,
     )
     from security_utils import (  # type: ignore
         check_token_optional_read,
@@ -1426,8 +1438,9 @@ HTML = r"""<!DOCTYPE html>
   .proxy-toggle { width: 16px; height: 16px; min-height: 0; accent-color: var(--accent); }
   .proxy-empty { padding: 38px 18px !important; color: var(--muted); text-align: center; }
   .proxy-job { color: var(--muted); font-size: 11px; }
-  body.sso-view-open { overflow: hidden; }
+  body.sso-view-open, body.reauth-view-open { overflow: hidden; }
   body.sso-view-open #dashboard-view > :not(#sso-view) { display: none; }
+  body.reauth-view-open #dashboard-view > :not(#reauth-view) { display: none; }
   .sso-view {
     position: fixed;
     inset: 68px 0 0;
@@ -1456,6 +1469,22 @@ HTML = r"""<!DOCTYPE html>
     border-bottom: 1px solid var(--border);
   }
   .sso-view-subtitle { margin: 7px 0 0; color: var(--muted); font-size: 12px; }
+  .reauth-code {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 18px;
+    margin: 14px 0 0;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    background: var(--surface-raised);
+  }
+  .reauth-code-value {
+    font-size: 22px;
+    letter-spacing: .12em;
+    font-weight: 700;
+  }
+  .reauth-code a { color: var(--accent); }
   .sso-summary {
     display: grid;
     grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -1865,6 +1894,7 @@ HTML = r"""<!DOCTYPE html>
     .sso-view { inset-block-start: 60px; }
     .sso-view-inner { width: calc(100% - 24px); padding: 20px 0 34px; }
     .sso-view-heading { align-items: flex-start; flex-direction: column; margin-bottom: 16px; padding-bottom: 16px; }
+    .reauth-code-value { font-size: 18px; }
     .sso-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .sso-import { grid-template-columns: minmax(0, 1fr); }
     .proxy-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1911,14 +1941,16 @@ HTML = r"""<!DOCTYPE html>
     .button-group { justify-content: flex-start; }
     #run-status { display: none; }
     button.view-switch { min-width: 0; padding-inline: 6px; }
-    #domain-view-label, #proxy-view-label, #sso-view-label, #help-view-label { font-size: 0; }
+    #domain-view-label, #proxy-view-label, #sso-view-label, #reauth-view-label, #help-view-label { font-size: 0; }
     #domain-view-label::after { content: "邮箱"; font-size: 11px; }
     #proxy-view-label::after { content: "代理"; font-size: 11px; }
     #sso-view-label::after { content: "风控"; font-size: 11px; }
+    #reauth-view-label::after { content: "授权"; font-size: 11px; }
     #help-view-label::after { content: "问题"; font-size: 11px; }
     #domain-view-toggle[data-active="true"] #domain-view-label::after,
     #proxy-view-toggle[data-active="true"] #proxy-view-label::after,
     #sso-view-toggle[data-active="true"] #sso-view-label::after,
+    #reauth-view-toggle[data-active="true"] #reauth-view-label::after,
     #help-view-toggle[data-active="true"] #help-view-label::after { content: "返回"; }
     button.theme-option { padding-inline: 6px; }
     .domain-settings { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1990,6 +2022,9 @@ HTML = r"""<!DOCTYPE html>
       </button>
       <button type="button" class="view-switch" id="sso-view-toggle" aria-label="打开 SSO 风控" title="SSO 风控" aria-controls="sso-view" aria-expanded="false" data-active="false" onclick="toggleSsoView()">
         <span id="sso-view-label" aria-hidden="true">SSO 风控</span>
+      </button>
+      <button type="button" class="view-switch" id="reauth-view-toggle" aria-label="打开重新授权" title="重新授权" aria-controls="reauth-view" aria-expanded="false" data-active="false" onclick="toggleReauthView()">
+        <span id="reauth-view-label" aria-hidden="true">重新授权</span>
       </button>
       <button type="button" class="view-switch" id="help-view-toggle" aria-label="打开问题和使用" title="问题和使用" aria-controls="help-view" aria-expanded="false" data-active="false" onclick="toggleAppView()">
         <span id="help-view-label" aria-hidden="true">问题和使用</span>
@@ -2111,6 +2146,10 @@ HTML = r"""<!DOCTYPE html>
           <details class="faq-item" data-faq-item data-search="sso 风控 botFlagSource policy deny check-sso-state 检测 面板 粘贴">
             <summary>如何用 SSO 批量检测账号是否被风控</summary>
             <div class="faq-answer">打开顶部“SSO 风控”，粘贴 <code>email----sso</code> 或纯 cookie，也可扫描待处理 / 全部账号 / 已隔离名单。面板用 SSO 访问 grok.com 读取 <code>botFlagSource</code> 和 <code>policy=deny</code>，不换 token、不入库。标记规则与注册门禁一致：<code>botFlagSource</code> 为 1/2，或任意 <code>policy=deny</code>。面板下载只包含脱敏状态，不含 SSO；完整干净名单仅写入本机权限为 <code>0600</code> 的 <code>log/sso_clean.txt</code>，供主机上的 CLI 继续使用。标记名单写到 <code>log/sso_flagged.jsonl</code>（不含 token）。命令行：<code>python scripts/check_sso_state.py --sso list.txt --from-config config.json</code>。</div>
+          </details>
+          <details class="faq-item" data-faq-item data-search="重新授权 grok2api accounts 对照 sso 缺失 过期">
+            <summary>Grok2API 过期账号删掉后如何对照并重新授权</summary>
+            <div class="faq-answer">打开顶部“重新授权”，用本地 SSO 邮箱对照远程 <code>GET /api/admin/v1/accounts</code>。登录令牌用配置里的 Grok2API 用户名密码现取。SSO 有、远程没有的邮箱就是缺失项，点“重新授权缺失”会用本地 SSO 重新换 token 并导入。</div>
           </details>
           <details class="faq-item" data-faq-item data-search="卡住 浏览器 启动失败 turnstile 资料页 空页 并发 camoufox">
             <summary>注册卡在验证码、资料页或浏览器启动</summary>
@@ -2399,6 +2438,61 @@ HTML = r"""<!DOCTYPE html>
     </div>
   </section>
 
+  <section class="sso-view" id="reauth-view" aria-labelledby="reauth-view-title" hidden>
+    <div class="sso-view-inner">
+      <div class="sso-view-heading">
+        <div>
+          <div class="mail-source-kicker">SSO → Grok2API</div>
+          <div class="page-title" id="reauth-view-title">重新授权</div>
+          <p class="sso-view-subtitle">用本地 SSO 邮箱对照远程 Grok2API 账号列表，缺失的再换 token 写回</p>
+        </div>
+        <span class="sso-job mono" id="reauth-heading-status">尚未对照</span>
+      </div>
+
+      <div class="sso-summary" id="reauth-summary" aria-label="重新授权对照结果">
+        <div class="sso-summary-item"><div class="sso-summary-label">SSO</div><div class="sso-summary-value" id="reauth-kpi-sso">--</div></div>
+        <div class="sso-summary-item"><div class="sso-summary-label">远程</div><div class="sso-summary-value" id="reauth-kpi-remote">--</div></div>
+        <div class="sso-summary-item"><div class="sso-summary-label">已有</div><div class="sso-summary-value ok" id="reauth-kpi-present">--</div></div>
+        <div class="sso-summary-item"><div class="sso-summary-label">缺失</div><div class="sso-summary-value fail" id="reauth-kpi-missing">--</div></div>
+        <div class="sso-summary-item"><div class="sso-summary-label">任务</div><div class="sso-summary-value" id="reauth-kpi-job">--</div></div>
+        <div class="sso-summary-item"><div class="sso-summary-label">来源</div><div class="sso-summary-value" id="reauth-kpi-source">--</div></div>
+      </div>
+
+      <div class="sso-import">
+        <div class="sso-import-actions">
+          <div>
+            <div class="sso-source-row" role="group" aria-label="SSO 来源">
+              <button type="button" id="reauth-src-accounts" aria-pressed="true" onclick="setReauthSource('accounts')">全部账号</button>
+              <button type="button" id="reauth-src-pending" aria-pressed="false" onclick="setReauthSource('pending')">待处理</button>
+            </div>
+            <p class="sso-format">对照远程 <code>/api/admin/v1/accounts</code>。登录令牌用配置里的用户名密码现取，不会保存浏览器里复制的 JWT。</p>
+          </div>
+          <div class="button-group">
+            <button class="primary" id="reauth-compare" onclick="compareReauth()">对照缺失</button>
+            <button id="reauth-start" onclick="startReauth()">重新授权缺失</button>
+            <button class="danger" id="reauth-stop" onclick="stopReauthJob()">停止</button>
+          </div>
+        </div>
+      </div>
+      <div class="msg" id="reauth-msg" role="status" aria-live="polite"></div>
+
+      <div class="sso-list-section">
+        <div class="sso-list-head">
+          <div>
+            <h2>缺失邮箱</h2>
+            <div class="sso-job mono" id="reauth-job-status" role="status" aria-live="polite">先对照再授权</div>
+          </div>
+        </div>
+        <div class="sso-table-wrap">
+          <table class="sso-table">
+            <thead><tr><th>邮箱</th><th>SSO</th><th>Grok2API</th></tr></thead>
+            <tbody id="reauth-body"><tr><td colspan="3" class="sso-empty">选择 SSO 来源后点对照缺失</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section class="metric-grid panel-gap" id="kpis" aria-label="核心指标"></section>
 
   <section class="card panel rate-panel">
@@ -2584,12 +2678,13 @@ function setTheme(theme) {
   syncThemeButtons();
 }
 function setAppView(view, options = {}) {
-  if (view !== "dashboard" && view !== "help" && view !== "proxies" && view !== "domains" && view !== "sso") return;
+  if (view !== "dashboard" && view !== "help" && view !== "proxies" && view !== "domains" && view !== "sso" && view !== "reauth") return;
   const dashboard = document.getElementById("dashboard-view");
   const help = document.getElementById("help-view");
   const proxies = document.getElementById("proxy-view");
   const domains = document.getElementById("domain-view");
   const sso = document.getElementById("sso-view");
+  const reauth = document.getElementById("reauth-view");
   const domainToggle = document.getElementById("domain-view-toggle");
   const domainLabel = document.getElementById("domain-view-label");
   const toggle = document.getElementById("help-view-toggle");
@@ -2598,13 +2693,16 @@ function setAppView(view, options = {}) {
   const proxyLabel = document.getElementById("proxy-view-label");
   const ssoToggle = document.getElementById("sso-view-toggle");
   const ssoLabel = document.getElementById("sso-view-label");
-  if (!dashboard || !help || !proxies || !domains || !sso || !domainToggle || !domainLabel || !toggle || !label || !proxyToggle || !proxyLabel || !ssoToggle || !ssoLabel) return;
+  const reauthToggle = document.getElementById("reauth-view-toggle");
+  const reauthLabel = document.getElementById("reauth-view-label");
+  if (!dashboard || !help || !proxies || !domains || !sso || !reauth || !domainToggle || !domainLabel || !toggle || !label || !proxyToggle || !proxyLabel || !ssoToggle || !ssoLabel || !reauthToggle || !reauthLabel) return;
   const isHelp = view === "help";
   const isProxies = view === "proxies";
   const isDomains = view === "domains";
   const isSso = view === "sso";
-  const isOverlay = isHelp || isProxies || isDomains || isSso;
-  const dashboardChildren = Array.from(dashboard.children).filter(element => element !== help && element !== proxies && element !== domains && element !== sso);
+  const isReauth = view === "reauth";
+  const isOverlay = isHelp || isProxies || isDomains || isSso || isReauth;
+  const dashboardChildren = Array.from(dashboard.children).filter(element => element !== help && element !== proxies && element !== domains && element !== sso && element !== reauth);
   dashboardChildren.forEach(element => {
     element.inert = isOverlay;
     if (isOverlay) element.setAttribute("aria-hidden", "true");
@@ -2618,10 +2716,13 @@ function setAppView(view, options = {}) {
   domains.inert = !isDomains;
   sso.hidden = !isSso;
   sso.inert = !isSso;
+  reauth.hidden = !isReauth;
+  reauth.inert = !isReauth;
   document.body.classList.toggle("help-view-open", isHelp);
   document.body.classList.toggle("proxy-view-open", isProxies);
   document.body.classList.toggle("domain-view-open", isDomains);
   document.body.classList.toggle("sso-view-open", isSso);
+  document.body.classList.toggle("reauth-view-open", isReauth);
   toggle.dataset.active = String(isHelp);
   toggle.setAttribute("aria-expanded", String(isHelp));
   toggle.setAttribute("aria-label", isHelp ? "返回控制台" : "打开问题和使用");
@@ -2642,6 +2743,11 @@ function setAppView(view, options = {}) {
   ssoToggle.setAttribute("aria-label", isSso ? "返回控制台" : "打开 SSO 风控");
   ssoToggle.title = isSso ? "返回控制台" : "SSO 风控";
   ssoLabel.textContent = isSso ? "返回控制台" : "SSO 风控";
+  reauthToggle.dataset.active = String(isReauth);
+  reauthToggle.setAttribute("aria-expanded", String(isReauth));
+  reauthToggle.setAttribute("aria-label", isReauth ? "返回控制台" : "打开重新授权");
+  reauthToggle.title = isReauth ? "返回控制台" : "重新授权";
+  reauthLabel.textContent = isReauth ? "返回控制台" : "重新授权";
   if (options.persist !== false) {
     try { localStorage.setItem(APP_VIEW_KEY, view); } catch (e) {}
   }
@@ -2651,11 +2757,12 @@ function setAppView(view, options = {}) {
     refreshEmailDomains();
   }
   if (isSso) refreshSsoState();
+  if (isReauth) refreshReauth();
   if (options.focus) {
     requestAnimationFrame(() => {
       const target = isHelp
         ? document.querySelector('[data-help-tab][aria-selected="true"]')
-        : (isProxies ? document.getElementById("proxy-input") : (isDomains ? document.getElementById("mail-provider-select") : (isSso ? document.getElementById("sso-input") : (view === "dashboard" ? domainToggle : toggle))));
+        : (isProxies ? document.getElementById("proxy-input") : (isDomains ? document.getElementById("mail-provider-select") : (isSso ? document.getElementById("sso-input") : (isReauth ? document.getElementById("reauth-compare") : (view === "dashboard" ? domainToggle : toggle)))));
       if (target) target.focus();
     });
   }
@@ -2675,6 +2782,10 @@ function toggleDomainView() {
 function toggleSsoView() {
   const isSso = document.body.classList.contains("sso-view-open");
   setAppView(isSso ? "dashboard" : "sso", { focus: true });
+}
+function toggleReauthView() {
+  const isReauth = document.body.classList.contains("reauth-view-open");
+  setAppView(isReauth ? "dashboard" : "reauth", { focus: true });
 }
 function setHelpTab(name) {
   if (name !== "guide" && name !== "faq") return;
@@ -2730,13 +2841,13 @@ function initHelp() {
     view = localStorage.getItem(APP_VIEW_KEY) || "dashboard";
     tab = localStorage.getItem(HELP_TAB_KEY) || "guide";
   } catch (e) {}
-  if (!["dashboard", "help", "proxies", "domains", "sso"].includes(view)) view = "dashboard";
+  if (!["dashboard", "help", "proxies", "domains", "sso", "reauth"].includes(view)) view = "dashboard";
   setHelpTab(tab);
   filterFaq("");
   setAppView(view, { persist: false, focus: false });
 }
 document.addEventListener("keydown", event => {
-  if (event.key === "Escape" && (document.body.classList.contains("help-view-open") || document.body.classList.contains("proxy-view-open") || document.body.classList.contains("domain-view-open") || document.body.classList.contains("sso-view-open"))) {
+  if (event.key === "Escape" && (document.body.classList.contains("help-view-open") || document.body.classList.contains("proxy-view-open") || document.body.classList.contains("domain-view-open") || document.body.classList.contains("sso-view-open") || document.body.classList.contains("reauth-view-open"))) {
     setAppView("dashboard", { focus: true });
   }
 });
@@ -3526,6 +3637,79 @@ async function stopSsoScan() {
     await refreshSsoState();
   } catch (e) { setMsg("sso-msg", String(e.message || e), "err"); }
 }
+let reauthSource = "accounts";
+let lastReauth = null;
+function setReauthSource(source) {
+  reauthSource = source === "pending" ? "pending" : "accounts";
+  document.getElementById("reauth-src-accounts").setAttribute("aria-pressed", String(reauthSource === "accounts"));
+  document.getElementById("reauth-src-pending").setAttribute("aria-pressed", String(reauthSource === "pending"));
+}
+function renderReauth(data) {
+  lastReauth = data || {};
+  const compare = lastReauth.compare || {};
+  const summary = lastReauth.summary || {};
+  const job = lastReauth.job || {};
+  document.getElementById("reauth-kpi-sso").textContent = summary.sso ?? compare.sso_count ?? "--";
+  document.getElementById("reauth-kpi-remote").textContent = summary.remote ?? compare.remote_count ?? "--";
+  document.getElementById("reauth-kpi-present").textContent = summary.present ?? (compare.present || []).length ?? "--";
+  document.getElementById("reauth-kpi-missing").textContent = summary.missing ?? (compare.missing || []).length ?? "--";
+  document.getElementById("reauth-kpi-job").textContent = job.running ? ("进行中 #" + (job.pid || "?")) : "空闲";
+  document.getElementById("reauth-kpi-source").textContent = compare.source || reauthSource;
+  document.getElementById("reauth-heading-status").textContent = job.running ? ("授权中 #" + (job.pid || "?")) : (compare.source ? "已对照" : "尚未对照");
+  document.getElementById("reauth-job-status").textContent = job.running
+    ? ("sso_to_auth_json 运行中 #" + (job.pid || "?"))
+    : ((compare.missing || []).length ? ("缺失 " + compare.missing.length + " 个") : "没有缺失或尚未对照");
+  document.getElementById("reauth-compare").disabled = !!job.running;
+  document.getElementById("reauth-start").disabled = !!job.running || !((compare.missing || []).length);
+  document.getElementById("reauth-stop").disabled = !job.running;
+  const missing = compare.missing || [];
+  const present = new Set(compare.present || []);
+  const rows = missing.map(email => `<tr><td class="mono">${esc(email)}</td><td>有</td><td>无</td></tr>`);
+  document.getElementById("reauth-body").innerHTML = rows.length
+    ? rows.join("")
+    : '<tr><td colspan="3" class="sso-empty">' + (compare.source ? "SSO 邮箱都已在远程 Grok2API 中" : "选择 SSO 来源后点对照缺失") + "</td></tr>";
+  void present;
+}
+async function refreshReauth(authHelp = false) {
+  try {
+    const data = await api("/api/reauth?_=" + Date.now(), { authHelp });
+    if (!lastReauth || !lastReauth.compare || !lastReauth.compare.source) renderReauth(data);
+    else {
+      lastReauth.job = data.job || lastReauth.job;
+      renderReauth(lastReauth);
+    }
+  } catch (e) {
+    const st = document.getElementById("reauth-heading-status");
+    if (st) st.textContent = String(e.message || e).includes("令牌") ? "等待令牌" : "检查失败";
+  }
+}
+async function compareReauth() {
+  setMsg("reauth-msg", "正在对照远程账号列表…", "");
+  try {
+    const data = await api("/api/reauth/compare", { method: "POST", body: JSON.stringify({ source: reauthSource }) });
+    renderReauth(data);
+    setMsg("reauth-msg", "对照完成，缺失 " + ((data.compare && data.compare.missing) || []).length + " 个", "ok");
+  } catch (e) { setMsg("reauth-msg", String(e.message || e), "err"); }
+}
+async function startReauth() {
+  const missing = ((lastReauth && lastReauth.compare) || {}).missing || [];
+  if (!missing.length) { setMsg("reauth-msg", "没有缺失邮箱", "err"); return; }
+  if (!confirm("对 " + missing.length + " 个缺失邮箱用本地 SSO 重新换 token 并导入 Grok2API？")) return;
+  setMsg("reauth-msg", "正在启动重新授权…", "");
+  try {
+    const data = await api("/api/reauth/start", { method: "POST", body: JSON.stringify({ source: reauthSource }) });
+    renderReauth(Object.assign({}, lastReauth || {}, data));
+    setMsg("reauth-msg", "已启动，共 " + (data.input_count || 0) + " 条", "ok");
+  } catch (e) { setMsg("reauth-msg", String(e.message || e), "err"); }
+}
+async function stopReauthJob() {
+  try {
+    const data = await api("/api/reauth/stop", { method: "POST", body: "{}" });
+    setMsg("reauth-msg", "已请求停止", "ok");
+    await refreshReauth();
+    void data;
+  } catch (e) { setMsg("reauth-msg", String(e.message || e), "err"); }
+}
 async function exportSsoState(kind) {
   try {
     const data = await api("/api/sso-state/export", { method: "POST", body: JSON.stringify({ kind }) });
@@ -3823,6 +4007,7 @@ setInterval(() => {
   if (document.body.classList.contains("sso-view-open") || (lastSsoState && lastSsoState.running)) {
     refreshSsoState(false);
   }
+  if (document.body.classList.contains("reauth-view-open")) refreshReauth(false);
 }, 2000);
 setInterval(() => {
   if (document.body.classList.contains("proxy-view-open")) refreshProxies(false);
@@ -3939,7 +4124,7 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/health":
             self._json(200, {"ok": True})
             return
-        if u.path in ("/api/status", "/api/blacklist", "/api/stats", "/api/control", "/api/recovery", "/api/proxies", "/api/email-provider", "/api/email-domains", "/api/bfs", "/api/sso-state"):
+        if u.path in ("/api/status", "/api/blacklist", "/api/stats", "/api/control", "/api/recovery", "/api/proxies", "/api/email-provider", "/api/email-domains", "/api/bfs", "/api/sso-state", "/api/reauth"):
             if not self._require_read():
                 return
         if u.path == "/api/status":
@@ -3980,6 +4165,12 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/sso-state":
             try:
                 self._json(200, sso_state_status())
+            except Exception as e:
+                self._json(500, {"ok": False, "error": redact_log_line(str(e))})
+            return
+        if u.path == "/api/reauth":
+            try:
+                self._json(200, reauth_status())
             except Exception as e:
                 self._json(500, {"ok": False, "error": redact_log_line(str(e))})
             return
@@ -4090,6 +4281,30 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/sso-state/stop":
             try:
                 self._json(200, stop_sso_state_scan())
+            except Exception as e:
+                self._json(500, {"ok": False, "error": redact_log_line(str(e))})
+            return
+        if u.path == "/api/reauth/compare":
+            try:
+                result = compare_sso_to_remote(str((body or {}).get("source") or "accounts"))
+                self._json(200, result)
+            except ValueError as e:
+                self._json(400, {"ok": False, "error": redact_log_line(str(e))})
+            except Exception as e:
+                self._json(500, {"ok": False, "error": redact_log_line(str(e))})
+            return
+        if u.path == "/api/reauth/start":
+            try:
+                result = start_reauth_missing(str((body or {}).get("source") or "accounts"))
+                self._json(200 if result.get("ok") else 409, result)
+            except ValueError as e:
+                self._json(400, {"ok": False, "error": redact_log_line(str(e))})
+            except Exception as e:
+                self._json(500, {"ok": False, "error": redact_log_line(str(e))})
+            return
+        if u.path == "/api/reauth/stop":
+            try:
+                self._json(200, stop_reauth())
             except Exception as e:
                 self._json(500, {"ok": False, "error": redact_log_line(str(e))})
             return

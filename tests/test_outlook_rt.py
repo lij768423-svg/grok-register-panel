@@ -740,6 +740,32 @@ def test_transient_graph_failure_does_not_consume_inventory():
         assert "RT_PRIVATE" not in "\n".join(logs)
 
 
+def test_upsert_inventory_and_unmark_used():
+    with tempfile.TemporaryDirectory() as tmp:
+        inv = Path(tmp) / "stock.jsonl"
+        inv.write_text(
+            json.dumps({"email": "keep@example.test", "refresh_token": "RT_OLD"})
+            + "\n",
+            encoding="utf-8",
+        )
+        outlook_rt.mark_used("keep@example.test", str(inv), reason="precheck_fail")
+        updated = outlook_rt.upsert_inventory_account(
+            str(inv), "keep@example.test", "RT_NEW", client_id="cid-1"
+        )
+        created = outlook_rt.upsert_inventory_account(
+            str(inv), "new@example.test", "RT_FRESH"
+        )
+        assert updated == "updated"
+        assert created == "created"
+        assert outlook_rt.unmark_used("keep@example.test", str(inv)) is True
+        rows = {
+            item["email"]: item
+            for item in outlook_rt.list_inventory_accounts(str(inv))
+        }
+        assert rows["keep@example.test"]["refresh_token"] == "RT_NEW"
+        assert rows["new@example.test"]["refresh_token"] == "RT_FRESH"
+
+
 if __name__ == "__main__":
     test_load_jsonl_and_text_formats()
     test_take_mark_used_and_stats()
@@ -757,4 +783,5 @@ if __name__ == "__main__":
     test_wait_for_code_fast_fail_on_dead_refresh()
     test_probe_persists_rotated_refresh_token_without_consuming_inventory()
     test_transient_graph_failure_does_not_consume_inventory()
+    test_upsert_inventory_and_unmark_used()
     print("ok")

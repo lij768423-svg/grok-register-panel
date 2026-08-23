@@ -2201,6 +2201,127 @@ def upload_grok2api_auth_remote(
     return name
 
 
+def _public_grok2api_account(item: dict) -> dict:
+    email = str(item.get("email") or item.get("name") or "").strip().lower()
+    quota = item.get("quota") if isinstance(item.get("quota"), dict) else {}
+    try:
+        refresh_failures = int(item.get("refreshFailureCount") or 0)
+    except (TypeError, ValueError):
+        refresh_failures = 0
+    return {
+        "email": email,
+        "auth_status": str(item.get("authStatus") or ""),
+        "enabled": bool(item.get("enabled")),
+        "expires_at": str(item.get("expiresAt") or ""),
+        "quota_status": str(quota.get("status") or ""),
+        "refresh_failure_count": refresh_failures,
+    }
+
+
+def list_grok2api_accounts(
+    base_url: str,
+    username: str = "",
+    password: str = "",
+    *,
+    provider: str = "grok_build",
+    page_size: int = 100,
+    timeout: int = 30,
+    proxy: str = "",
+    auth_state: dict | None = None,
+) -> list[dict]:
+    """Page through GET /api/admin/v1/accounts. Returns redacted account rows."""
+    del proxy
+    base = _grok2api_admin_root(base_url)
+    if not base:
+        raise ValueError("grok2api_remote_url 为空")
+    state = auth_state if isinstance(auth_state, dict) else {}
+    session = _grok2api_http_session(state)
+    key = _resolve_grok2api_access_token(
+        base,
+        username,
+        password,
+        state,
+        timeout,
+        session,
+    )
+    size = max(1, min(int(page_size or 100), 1000))
+    kind = str(provider or "grok_build").strip() or "grok_build"
+
+    def _fetch(page: int, access_token: str):
+        return session.get(
+            f"{base}/api/admin/v1/accounts",
+            params={
+                "page": page,
+                "pageSize": size,
+                "sortBy": "createdAt",
+                "sortOrder": "desc",
+                "provider": kind,
+            },
+            headers={
+                "Accept": "application/json",
+                "Authorization": f"Bearer {access_token}",
+            },
+            timeout=timeout,
+            proxies=_GROK2API_DIRECT_PROXIES,
+        )
+
+    rows: list[dict] = []
+    seen: set[str] = set()
+    page = 1
+    total = 0
+    while page <= 50:
+        resp = _fetch(page, key)
+        if resp.status_code == 401 and str(username or "").strip() and str(password or ""):
+            refreshed = _refresh_grok2api_access_token(base, session, timeout=timeout)
+            if _grok2api_access_token_usable(refreshed):
+                key = refreshed
+            else:
+                key = login_grok2api(
+                    base,
+                    username,
+                    password,
+                    timeout=timeout,
+                    session=session,
+                    auth_state=state,
+                )
+            state["access_token"] = key
+            resp = _fetch(page, key)
+        if resp.status_code >= 400:
+            detail = _grok2api_response_detail(resp) or "remote rejected the request"
+            raise RuntimeError(
+                f"Grok2API 账号列表失败 HTTP {resp.status_code}: {detail}"
+            )
+        try:
+            payload = resp.json()
+        except Exception as exc:
+            raise RuntimeError("Grok2API 账号列表不是有效 JSON") from exc
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, dict):
+            raise RuntimeError("Grok2API 账号列表缺少 data")
+        try:
+            total = int(data.get("total") or 0)
+        except (TypeError, ValueError):
+            total = 0
+        items = data.get("items")
+        if not isinstance(items, list) or not items:
+            break
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            row = _public_grok2api_account(item)
+            email = row["email"]
+            if not email or email in seen:
+                continue
+            seen.add(email)
+            rows.append(row)
+        if total and len(rows) >= total:
+            break
+        if len(items) < size:
+            break
+        page += 1
+    return rows
+
+
 def upload_cpa_auth_remote(
     base_url: str,
     management_key: str,
@@ -2560,6 +2681,11 @@ def main() -> int:
     )
     ap.add_argument("--proxy", default="", help="OAuth 请求走代理，如 http://127.0.0.1:7890")
     ap.add_argument("--consume-success", action="store_true", help="成功后从 --sso 队列原子移除对应记录")
+    ap.add_argument(
+        "--no-skip-existing",
+        action="store_true",
+        help="即使本地 CPA 已有同邮箱也继续换 token 并写入 Grok2API",
+    )
     ap.add_argument("--report-json", default=None, help="写入不含 token 的运行摘要 JSON")
     ap.add_argument(
         "--check-bfs-dir",
@@ -2698,7 +2824,7 @@ def main() -> int:
         for record in records
         if record.email and record.email.strip().lower() in existing_emails
     ]
-    if already_present:
+    if already_present and not getattr(args, "no_skip_existing", False):
         existing_ssos = {record.sso for record in already_present}
         records = [record for record in records if record.sso not in existing_ssos]
         if args.consume_success and args.sso:

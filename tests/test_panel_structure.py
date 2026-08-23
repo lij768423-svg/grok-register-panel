@@ -96,7 +96,7 @@ def test_help_and_faq_module():
     assert 'body.help-view-open #dashboard-view > :not(#help-view) { display: none; }' in html
     assert 'role="tablist"' in html
     assert 'id="faq-search"' in html
-    assert len(re.findall(r'<details class="faq-item" data-faq-item', html)) == 15
+    assert len(re.findall(r'<details class="faq-item" data-faq-item', html)) == 16
     assert 'policy=deny' in html
     assert 'bfs' in html.lower()
     assert 'id="bfs-title"' in html
@@ -132,6 +132,11 @@ def test_proxy_pool_panel_structure():
     assert 'function deleteProxyItem(' in mon
     assert 'function deleteAllProxies(' in mon
     assert 'id="proxy-delete-all"' in html
+    assert 'id="reauth-view-toggle"' in html
+    assert 'id="reauth-view"' in html
+    assert 'function compareReauth(' in mon
+    assert 'function startReauth(' in mon
+    assert '/api/reauth/compare' in mon
     assert '/api/proxies/import' in mon
     assert '/api/proxies/test' in mon
     assert 'def do_PATCH(self):' in mon

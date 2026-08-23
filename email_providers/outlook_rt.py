@@ -294,14 +294,17 @@ def _parse_text_line(raw: str) -> Optional[Dict[str, str]]:
     return None
 
 
-def load_inventory(inventory_path: str) -> List[Dict[str, str]]:
+def list_inventory_accounts(inventory_path: str) -> List[Dict[str, str]]:
     path = Path(normalize_inventory_path(inventory_path)).expanduser()
     if not path.is_file():
-        raise FileNotFoundError(f"Outlook RT 库存文件不存在: {path}")
+        return []
     accounts: List[Dict[str, str]] = []
     seen: set[str] = set()
-    text = path.read_text(encoding="utf-8-sig")
-    for line_no, raw in enumerate(text.splitlines(), 1):
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except OSError:
+        return []
+    for raw in text.splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
@@ -322,6 +325,14 @@ def load_inventory(inventory_path: str) -> List[Dict[str, str]]:
             continue
         seen.add(key)
         accounts.append(acc)
+    return accounts
+
+
+def load_inventory(inventory_path: str) -> List[Dict[str, str]]:
+    path = Path(normalize_inventory_path(inventory_path)).expanduser()
+    if not path.is_file():
+        raise FileNotFoundError(f"Outlook RT 库存文件不存在: {path}")
+    accounts = list_inventory_accounts(str(path))
     if not accounts:
         raise RuntimeError(f"Outlook RT 库存无有效记录: {path}")
     return accounts
@@ -406,75 +417,156 @@ def _client_ids_for(account: Dict[str, str], default_client_id: str = "") -> Lis
     return ordered or [DEFAULT_CLIENT_ID]
 
 
+def _rewrite_refresh_lines(
+    lines: List[str],
+    email_addr: str,
+    new_refresh: str,
+    client_id: str = "",
+) -> tuple[List[str], bool]:
+    out: List[str] = []
+    changed = False
+    email_l = email_addr.lower()
+    for raw in lines:
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            out.append(raw if raw.endswith("\n") else raw + "\n")
+            continue
+        rewritten = None
+        if stripped.startswith("{"):
+            try:
+                obj = json.loads(stripped)
+            except Exception:
+                obj = None
+            if isinstance(obj, dict):
+                em = str(obj.get("email") or obj.get("mail") or "").strip().lower()
+                if em == email_l:
+                    if "refresh_token" in obj:
+                        obj["refresh_token"] = new_refresh
+                    elif "refreshToken" in obj:
+                        obj["refreshToken"] = new_refresh
+                    else:
+                        obj["refresh_token"] = new_refresh
+                    if client_id:
+                        obj["client_id"] = client_id
+                    rewritten = json.dumps(obj, ensure_ascii=False) + "\n"
+        else:
+            acc = _parse_text_line(stripped)
+            if acc and acc["email"].lower() == email_l:
+                if acc.get("client_id") and acc.get("password") is not None and "----" in stripped:
+                    parts = stripped.split("----")
+                    if len(parts) >= 4:
+                        cid = client_id or parts[2].strip()
+                        rewritten = (
+                            f"{parts[0].strip()}----{parts[1].strip()}----"
+                            f"{cid}----{new_refresh}\n"
+                        )
+                    elif len(parts) == 2:
+                        rewritten = f"{parts[0].strip()}----{new_refresh}\n"
+                    elif len(parts) == 3:
+                        cid = client_id or parts[1].strip()
+                        rewritten = (
+                            f"{parts[0].strip()}----{cid}----{new_refresh}\n"
+                        )
+                else:
+                    rewritten = f"{acc['email']}----{new_refresh}\n"
+        if rewritten is not None:
+            out.append(rewritten)
+            changed = True
+        else:
+            out.append(raw if raw.endswith("\n") else raw + "\n")
+    return out, changed
+
+
 def _update_refresh_in_inventory(
     inventory_path: str,
     email_addr: str,
     new_refresh: str,
     *,
     client_id: str = "",
-) -> None:
+) -> bool:
     if not new_refresh:
-        return
+        return False
     path = Path(normalize_inventory_path(inventory_path)).expanduser()
     if not path.is_file():
-        return
-    # 线程锁 + 文件锁，避免多 worker 并发写串行/覆盖
+        return False
     with _lock:
         with exclusive_file_lock(inventory_lock_path(inventory_path)):
             lines = path.read_text(encoding="utf-8-sig").splitlines(True)
-            out: List[str] = []
-            changed = False
-            email_l = email_addr.lower()
-            for raw in lines:
-                stripped = raw.strip()
-                if not stripped or stripped.startswith("#"):
-                    out.append(raw if raw.endswith("\n") else raw + "\n")
-                    continue
-                rewritten = None
-                if stripped.startswith("{"):
-                    try:
-                        obj = json.loads(stripped)
-                    except Exception:
-                        obj = None
-                    if isinstance(obj, dict):
-                        em = str(obj.get("email") or obj.get("mail") or "").strip().lower()
-                        if em == email_l:
-                            if "refresh_token" in obj:
-                                obj["refresh_token"] = new_refresh
-                            elif "refreshToken" in obj:
-                                obj["refreshToken"] = new_refresh
-                            else:
-                                obj["refresh_token"] = new_refresh
-                            if client_id:
-                                obj["client_id"] = client_id
-                            rewritten = json.dumps(obj, ensure_ascii=False) + "\n"
-                else:
-                    acc = _parse_text_line(stripped)
-                    if acc and acc["email"].lower() == email_l:
-                        if acc.get("client_id") and acc.get("password") is not None and "----" in stripped:
-                            parts = stripped.split("----")
-                            if len(parts) >= 4:
-                                cid = client_id or parts[2].strip()
-                                rewritten = (
-                                    f"{parts[0].strip()}----{parts[1].strip()}----"
-                                    f"{cid}----{new_refresh}\n"
-                                )
-                            elif len(parts) == 2:
-                                rewritten = f"{parts[0].strip()}----{new_refresh}\n"
-                            elif len(parts) == 3:
-                                cid = client_id or parts[1].strip()
-                                rewritten = (
-                                    f"{parts[0].strip()}----{cid}----{new_refresh}\n"
-                                )
-                        else:
-                            rewritten = f"{acc['email']}----{new_refresh}\n"
-                if rewritten is not None:
-                    out.append(rewritten)
-                    changed = True
-                else:
-                    out.append(raw if raw.endswith("\n") else raw + "\n")
+            out, changed = _rewrite_refresh_lines(
+                lines, email_addr, new_refresh, client_id
+            )
             if changed:
                 atomic_write_text(path, "".join(out), encoding="utf-8")
+            return changed
+
+
+def unmark_used(
+    email: str,
+    inventory_path: str,
+    used_path: str = "",
+) -> bool:
+    email_key = str(email or "").strip().lower()
+    if not email_key:
+        return False
+    used_file = used_path_for(inventory_path, used_path)
+    if not used_file.is_file():
+        return False
+    with _lock:
+        with exclusive_file_lock(inventory_lock_path(inventory_path)):
+            raw_lines = used_file.read_text(encoding="utf-8").splitlines(True)
+            kept: List[str] = []
+            removed = False
+            for raw in raw_lines:
+                item = raw.strip().lower()
+                if not item or item.startswith("#"):
+                    kept.append(raw if raw.endswith("\n") else raw + "\n")
+                    continue
+                current = item.split("----", 1)[0].strip()
+                if current == email_key:
+                    removed = True
+                    continue
+                kept.append(raw if raw.endswith("\n") else raw + "\n")
+            if not removed:
+                return False
+            atomic_write_text(used_file, "".join(kept), encoding="utf-8")
+            return True
+
+
+def upsert_inventory_account(
+    inventory_path: str,
+    email: str,
+    refresh_token: str,
+    *,
+    client_id: str = "",
+) -> str:
+    """Insert or replace one Outlook RT row. Returns created/updated."""
+    email_addr = str(email or "").strip()
+    token = str(refresh_token or "").strip()
+    if not email_addr or "@" not in email_addr or not token:
+        raise ValueError("Outlook RT 写入需要邮箱和 refresh_token")
+    path = Path(normalize_inventory_path(inventory_path)).expanduser()
+    if not str(path):
+        raise ValueError("outlook_rt_inventory 未配置")
+    ensure_private_dir(path.parent)
+    row = {"email": email_addr, "refresh_token": token}
+    cid = str(client_id or "").strip()
+    if cid:
+        row["client_id"] = cid
+    line = json.dumps(row, ensure_ascii=False) + "\n"
+    with _lock:
+        with exclusive_file_lock(inventory_lock_path(str(path))):
+            if path.is_file():
+                lines = path.read_text(encoding="utf-8-sig").splitlines(True)
+                out, changed = _rewrite_refresh_lines(
+                    lines, email_addr, token, cid
+                )
+                if changed:
+                    atomic_write_text(path, "".join(out), encoding="utf-8")
+                    return "updated"
+                append_private_text(path, line)
+                return "created"
+            create_private_text(path, line)
+            return "created"
 
 
 def refresh_access_token(
