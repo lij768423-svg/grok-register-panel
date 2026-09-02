@@ -30,6 +30,7 @@ tests=(
   tests/test_email_provider_store.py
   tests/test_local_email_history.py
   tests/test_inbucket.py
+  tests/test_icloud.py
   tests/test_outlook_rt.py
   tests/test_reauth.py
   tests/test_mailbox_inventory.py

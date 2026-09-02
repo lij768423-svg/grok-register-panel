@@ -272,6 +272,33 @@ def check_email_api(provider: str, config: dict, http_get: Callable, http_post: 
                 return "邮箱API", False, f"Inbucket HTTP {resp.status_code}"
             return "邮箱API", True, f"Inbucket 可达 HTTP {resp.status_code}（域名 {','.join(domains)[:80]}）"
 
+        if provider == "icloud":
+            from email_providers import icloud as icloud_provider
+
+            base = icloud_provider.normalize_base(
+                str(config.get("icloud_hme_api_base") or "")
+            )
+            password = str(config.get("icloud_hme_admin_password") or "")
+            if not base:
+                return "邮箱API", False, "未配置 icloud_hme_api_base"
+            if len(password) < 8:
+                return "邮箱API", False, "未配置 icloud_hme_admin_password（至少 8 字符）"
+            resp = http_post(
+                f"{base}/api/auth/login",
+                json={"password": password},
+                headers={"Accept": "application/json", "Content-Type": "application/json"},
+                timeout=12,
+                proxies={},
+            )
+            status = int(getattr(resp, "status_code", 0) or 0)
+            if status == 401:
+                return "邮箱API", False, "iCloud HME 管理员密码错误"
+            if status == 429:
+                return "邮箱API", False, "iCloud HME 登录过于频繁"
+            if status >= 400:
+                return "邮箱API", False, f"iCloud HME HTTP {status}"
+            return "邮箱API", True, f"iCloud HME 可达 HTTP {status}"
+
         if provider == "outlook_rt":
             from email_providers import outlook_rt as outlook_rt_provider
 

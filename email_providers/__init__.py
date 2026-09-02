@@ -9,4 +9,5 @@
 - outlook_rt: 本地 Outlook MSA refresh_token 库存（jsonl）
 - cf_outlook: cf-outlook-email 外部邮件 API + 本地邮箱库存
 - inbucket: Inbucket 自托管临时邮箱
+- icloud: 本地 icloud-hme Hide My Email
 """

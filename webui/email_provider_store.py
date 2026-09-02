@@ -29,6 +29,7 @@ PROVIDER_LABELS = {
     "outlook_rt": "Outlook RT 库存",
     "cf_outlook": "cf-outlook 邮箱 API",
     "inbucket": "Inbucket",
+    "icloud": "iCloud HME",
 }
 SUPPORTED_PROVIDERS = tuple(PROVIDER_LABELS)
 
@@ -225,6 +226,23 @@ FIELD_DEFINITIONS = {
             {"value": "1-3", "label": "随机 1-3 级子域"},
         ],
     },
+    "icloud_hme_api_base": {
+        "label": "icloud-hme 地址",
+        "type": "url",
+        "default": "http://127.0.0.1:8081",
+        "placeholder": "http://127.0.0.1:8081",
+    },
+    "icloud_hme_admin_password": {
+        "label": "管理员密码",
+        "type": "password",
+        "secret": True,
+        "placeholder": "与 ICLOUD_HME_ADMIN_PASSWORD 相同",
+    },
+    "icloud_hme_account_id": {
+        "label": "账号 ID（可选）",
+        "type": "text",
+        "placeholder": "留空自动选择可用 iCloud 账号",
+    },
 }
 
 PROVIDER_FIELDS = {
@@ -267,6 +285,11 @@ PROVIDER_FIELDS = {
         "cf_outlook_used_path",
     ),
     "inbucket": ("inbucket_api_base", "inbucket_domain", "inbucket_random_levels"),
+    "icloud": (
+        "icloud_hme_api_base",
+        "icloud_hme_admin_password",
+        "icloud_hme_account_id",
+    ),
 }
 
 SECRET_FIELDS = {
@@ -405,6 +428,11 @@ def _normalize_value(name: str, value: object):
         if text and any(ch in text for ch in "\n\r\0"):
             raise EmailProviderConfigError("库存路径无效")
         return text
+    if name == "icloud_hme_account_id":
+        text = _string(value)
+        if text and not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", text):
+            raise EmailProviderConfigError("iCloud 账号 ID 格式无效")
+        return text
     if name in {"cf_outlook_inventory", "cf_outlook_used_path"}:
         text = _string(value)
         if text and any(ch in text for ch in "\n\r\0"):
@@ -455,6 +483,9 @@ def _is_configured(provider: str, values: dict) -> bool:
         )
     if provider == "inbucket":
         return bool(values.get("inbucket_api_base") and values.get("inbucket_domain"))
+    if provider == "icloud":
+        password = str(values.get("icloud_hme_admin_password") or "")
+        return bool(values.get("icloud_hme_api_base") and len(password) >= 8)
     return False
 
 

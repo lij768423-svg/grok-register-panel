@@ -54,5 +54,8 @@
   "cf_outlook_used_path": "",
   "inbucket_api_base": "",
   "inbucket_domain": "",
-  "inbucket_random_levels": "0"
+  "inbucket_random_levels": "0",
+  "icloud_hme_api_base": "http://127.0.0.1:8081",
+  "icloud_hme_admin_password": "",
+  "icloud_hme_account_id": ""
 }

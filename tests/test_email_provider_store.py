@@ -57,6 +57,7 @@ def test_provider_schema_and_defaults():
             "outlook_rt",
             "cf_outlook",
             "inbucket",
+            "icloud",
         }
         assert providers["outlook_rt"]["configured"] is False
         assert providers["cf_outlook"]["configured"] is False
@@ -76,6 +77,16 @@ def test_provider_schema_and_defaults():
             "inbucket_domain",
             "inbucket_random_levels",
         }
+        assert providers["icloud"]["configured"] is False
+        assert {field["name"] for field in providers["icloud"]["fields"]} == {
+            "icloud_hme_api_base",
+            "icloud_hme_admin_password",
+            "icloud_hme_account_id",
+        }
+        assert any(
+            field["name"] == "icloud_hme_admin_password" and field["secret"] is True
+            for field in providers["icloud"]["fields"]
+        )
         random_levels = next(
             field
             for field in providers["inbucket"]["fields"]
@@ -319,6 +330,52 @@ def test_inbucket_requires_base_and_domain():
         )
 
 
+def test_icloud_requires_base_and_password():
+    with IsolatedConfig() as config_path:
+        incomplete = email_provider_store.save_email_provider_config(
+            "icloud",
+            {"icloud_hme_api_base": "http://127.0.0.1:8081"},
+        )
+        assert incomplete["configured"] is False
+        saved = email_provider_store.save_email_provider_config(
+            "icloud",
+            {
+                "icloud_hme_api_base": "http://127.0.0.1:8081/",
+                "icloud_hme_admin_password": "admin-pass-2026",
+                "icloud_hme_account_id": "acc_1",
+            },
+        )
+        assert saved["provider"] == "icloud"
+        assert saved["configured"] is True
+        assert saved["values"]["icloud_hme_admin_password"] == ""
+        assert saved["secret_configured"]["icloud_hme_admin_password"] is True
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        assert raw["icloud_hme_api_base"] == "http://127.0.0.1:8081"
+        assert raw["icloud_hme_admin_password"] == "admin-pass-2026"
+        assert raw["icloud_hme_account_id"] == "acc_1"
+
+        partial = email_provider_store.save_email_provider_config(
+            "icloud",
+            {"icloud_hme_api_base": "http://127.0.0.1:8081", "icloud_hme_admin_password": ""},
+        )
+        assert partial["configured"] is True
+        preserved = json.loads(config_path.read_text(encoding="utf-8"))
+        assert preserved["icloud_hme_admin_password"] == "admin-pass-2026"
+
+        assert_config_error(
+            lambda: email_provider_store.save_email_provider_config(
+                "icloud",
+                {"icloud_hme_api_base": "https://user:pass@127.0.0.1:8081"},
+            )
+        )
+        assert_config_error(
+            lambda: email_provider_store.save_email_provider_config(
+                "icloud",
+                {"icloud_hme_account_id": "bad id"},
+            )
+        )
+
+
 def test_cf_outlook_schema_and_secret_preservation():
     with IsolatedConfig() as config_path:
         with tempfile.TemporaryDirectory() as tmp:
@@ -367,5 +424,6 @@ if __name__ == "__main__":
     test_cloudflare_direct_create_does_not_probe_admin_domains()
     test_cloudflare_admin_create_does_not_probe_mailbox_domains()
     test_inbucket_requires_base_and_domain()
+    test_icloud_requires_base_and_password()
     test_cf_outlook_schema_and_secret_preservation()
     print("OK email provider store")

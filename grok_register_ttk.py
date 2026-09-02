@@ -36,6 +36,7 @@ from email_providers import cloudflare as cloudflare_provider
 from email_providers import cloudmail as cloudmail_provider
 from email_providers import cf_outlook as cf_outlook_provider
 from email_providers import duckmail as duckmail_provider
+from email_providers import icloud as icloud_provider
 from email_providers import inbucket as inbucket_provider
 from email_providers import mailnest as mailnest_provider
 from email_providers import moemail as moemail_provider
@@ -253,6 +254,9 @@ DEFAULT_CONFIG = {
     "inbucket_api_base": "",
     "inbucket_domain": "",
     "inbucket_random_levels": "0",
+    "icloud_hme_api_base": "http://127.0.0.1:8081",
+    "icloud_hme_admin_password": "",
+    "icloud_hme_account_id": "",
     # Outlook MSA refresh_token 库存（jsonl: email + refresh_token）
     "outlook_rt_inventory": "",
     "outlook_rt_used_path": "",
@@ -832,6 +836,8 @@ _MAIL_DIRECT_PATH_MARKERS = (
     "/api/mails",
     "/api/mail/",
     "/api/emails/",
+    "/api/vendor/",
+    "/api/auth/login",
 )
 
 
@@ -843,6 +849,7 @@ def _url_needs_direct(url: str) -> bool:
         config.get("moemail_api_base"),
         config.get("duckmail_api_base"),
         config.get("inbucket_api_base"),
+        config.get("icloud_hme_api_base"),
     )
     for value in configured_bases:
         base = str(value or "").strip().lower().rstrip("/")
@@ -1813,6 +1820,69 @@ def inbucket_get_email_and_token(domain=""):
     return address, mailbox
 
 
+def get_icloud_api_base():
+    return icloud_provider.normalize_base(str(config.get("icloud_hme_api_base", "") or ""))
+
+
+def get_icloud_admin_password():
+    return str(config.get("icloud_hme_admin_password", "") or "")
+
+
+def get_icloud_account_id():
+    return str(config.get("icloud_hme_account_id", "") or "").strip()
+
+
+def icloud_get_email_and_token():
+    return icloud_provider.create_mailbox(
+        http_get,
+        http_post,
+        http_delete,
+        get_icloud_api_base(),
+        get_icloud_admin_password(),
+        account_id=get_icloud_account_id(),
+    )
+
+
+def icloud_get_oai_code(
+    token,
+    email,
+    timeout=180,
+    poll_interval=3,
+    log_callback=None,
+    cancel_callback=None,
+    resend_callback=None,
+):
+    return icloud_provider.wait_for_code(
+        http_get,
+        http_post,
+        token,
+        email,
+        api_base=get_icloud_api_base(),
+        admin_password=get_icloud_admin_password(),
+        timeout=timeout,
+        poll_interval=poll_interval,
+        http_delete=http_delete,
+        raise_if_cancelled=raise_if_cancelled,
+        sleep_with_cancel=sleep_with_cancel,
+        log_callback=log_callback,
+        cancel_callback=cancel_callback,
+        resend_callback=resend_callback,
+    )
+
+
+def release_icloud_mailbox(log_callback=None):
+    if get_email_provider() != "icloud":
+        return
+    icloud_provider.release_pending(
+        http_get,
+        http_post,
+        http_delete,
+        get_icloud_api_base(),
+        get_icloud_admin_password(),
+        log_callback=log_callback,
+    )
+
+
 def inbucket_get_oai_code(
     mailbox,
     email,
@@ -2007,6 +2077,15 @@ def _release_duplicate_mailbox(provider: str, email: str, token_key: str) -> Non
                 reason="local_history_duplicate",
             )
         outlook_rt_provider.release_reservation(token_key, email)
+    elif provider == "icloud":
+        icloud_provider.release_mailbox(
+            http_get,
+            http_post,
+            http_delete,
+            get_icloud_api_base(),
+            get_icloud_admin_password(),
+            token_key,
+        )
 
 
 def _get_email_and_token_once(provider: str, api_key=None, exclude_emails=None):
@@ -2054,6 +2133,8 @@ def _get_email_and_token_once(provider: str, api_key=None, exclude_emails=None):
         return mailnest_buy_email(), "_"
     if provider == "inbucket":
         return inbucket_get_email_and_token(domain=managed_domain)
+    if provider == "icloud":
+        return icloud_get_email_and_token()
     if provider == "outlook_rt":
         return outlook_rt_take_mailbox(exclude_emails=exclude_emails)
     if provider == "cf_outlook":
@@ -2276,6 +2357,16 @@ def get_oai_code(
         )
     if provider == "inbucket":
         return inbucket_get_oai_code(
+            dev_token,
+            email,
+            timeout=timeout,
+            poll_interval=poll_interval,
+            log_callback=log_callback,
+            cancel_callback=cancel_callback,
+            resend_callback=resend_callback,
+        )
+    if provider == "icloud":
+        return icloud_get_oai_code(
             dev_token,
             email,
             timeout=timeout,
@@ -3014,6 +3105,7 @@ class GrokRegisterGUI:
                 "moemail",
                 "outlook_rt",
                 "cf_outlook",
+                "icloud",
             ],
             width=12,
         )
@@ -3379,6 +3471,42 @@ class GrokRegisterGUI:
             ),
         ]
 
+        self.icloud_hme_api_base_var = tk.StringVar(
+            value=str(config.get("icloud_hme_api_base", "http://127.0.0.1:8081") or "")
+        )
+        self.icloud_hme_admin_password_var = tk.StringVar(
+            value=str(config.get("icloud_hme_admin_password", "") or "")
+        )
+        self.icloud_hme_account_id_var = tk.StringVar(
+            value=str(config.get("icloud_hme_account_id", "") or "")
+        )
+        self._icloud_widgets = [
+            p_label(0, 0, "icloud-hme 地址:"),
+            p_field(
+                tk_entry(self.provider_frame, textvariable=self.icloud_hme_api_base_var, width=52),
+                0,
+                1,
+                columnspan=3,
+            ),
+            p_label(1, 0, "管理员密码:"),
+            p_field(
+                tk_entry(
+                    self.provider_frame,
+                    textvariable=self.icloud_hme_admin_password_var,
+                    width=34,
+                    show="*",
+                ),
+                1,
+                1,
+            ),
+            p_label(1, 2, "账号 ID（可选）:"),
+            p_field(
+                tk_entry(self.provider_frame, textvariable=self.icloud_hme_account_id_var, width=34),
+                1,
+                3,
+            ),
+        ]
+
         self._provider_widget_groups = {
             "duckmail": self._duckmail_widgets,
             "cloudflare": self._cloudflare_widgets,
@@ -3388,6 +3516,7 @@ class GrokRegisterGUI:
             "moemail": self._moemail_widgets,
             "outlook_rt": self._outlook_rt_widgets,
             "cf_outlook": self._cf_outlook_widgets,
+            "icloud": self._icloud_widgets,
         }
 
         add_label(3, 0, "并发数（可选）:")
@@ -3581,6 +3710,7 @@ class GrokRegisterGUI:
             "moemail": "MoeMail 配置",
             "outlook_rt": "Outlook RT 库存配置",
             "cf_outlook": "cf-outlook 邮箱 API 配置",
+            "icloud": "iCloud HME 配置",
         }
         self.provider_frame.configure(text=titles.get(provider, "邮箱服务商配置"))
         for widgets in self._provider_widget_groups.values():
@@ -3686,6 +3816,9 @@ class GrokRegisterGUI:
             config["cf_outlook_api_key"] = self.cf_outlook_api_key_var.get().strip()
             config["cf_outlook_inventory"] = self.cf_outlook_inventory_var.get().strip()
             config["cf_outlook_used_path"] = self.cf_outlook_used_path_var.get().strip()
+            config["icloud_hme_api_base"] = self.icloud_hme_api_base_var.get().strip()
+            config["icloud_hme_admin_password"] = self.icloud_hme_admin_password_var.get()
+            config["icloud_hme_account_id"] = self.icloud_hme_account_id_var.get().strip()
             config["cpa_auto_add"] = bool(self.cpa_auto_add_var.get())
             _mode_text = str(self.cpa_token_mode_var.get()).strip()
             if "协议" in _mode_text:
@@ -3815,6 +3948,9 @@ class GrokRegisterGUI:
         config["cf_outlook_api_base"] = self.cf_outlook_api_base_var.get().strip()
         config["cf_outlook_api_key"] = self.cf_outlook_api_key_var.get().strip()
         config["cf_outlook_inventory"] = self.cf_outlook_inventory_var.get().strip()
+        config["icloud_hme_api_base"] = self.icloud_hme_api_base_var.get().strip()
+        config["icloud_hme_admin_password"] = self.icloud_hme_admin_password_var.get()
+        config["icloud_hme_account_id"] = self.icloud_hme_account_id_var.get().strip()
         config["cf_outlook_used_path"] = self.cf_outlook_used_path_var.get().strip()
         config["cpa_auto_add"] = bool(self.cpa_auto_add_var.get())
         _mode_text = str(self.cpa_token_mode_var.get()).strip()
@@ -3892,6 +4028,15 @@ class GrokRegisterGUI:
                 missing.append("默认收信域名")
             if missing:
                 self.log(f"[!] CloudMail 模式缺少配置: {', '.join(missing)}")
+                return
+        if config["email_provider"] == "icloud":
+            missing = []
+            if not get_icloud_api_base():
+                missing.append("icloud-hme 地址")
+            if len(get_icloud_admin_password()) < 8:
+                missing.append("icloud-hme 管理员密码（至少 8 字符）")
+            if missing:
+                self.log(f"[!] iCloud 模式缺少配置: {', '.join(missing)}")
                 return
         if (
             config.get("cpa_auto_add")
@@ -4200,6 +4345,10 @@ class GrokRegisterGUI:
                         f"{redact_sensitive_log_line(str(exc))}"
                     )
                 finally:
+                    try:
+                        release_icloud_mailbox(wlog)
+                    except Exception as release_exc:
+                        wlog(f"[!] 删除 iCloud 邮箱失败: {release_exc}")
                     self.update_stats()
                 if self.should_stop():
                     break
@@ -4670,6 +4819,10 @@ def run_registration_cli(count):
                         elif local_success > 0 and local_success % 3 == 0:
                             rotate_idx += 1
                     finally:
+                        try:
+                            release_icloud_mailbox(lambda m: cli_log(f"[W{wid+1}] {m}"))
+                        except Exception as release_exc:
+                            cli_log(f"[W{wid+1}] [!] 删除 iCloud 邮箱失败: {release_exc}")
                         if i < n and not controller.should_stop() and not worker_stop:
                             try:
                                 stop_browser()
@@ -5035,6 +5188,10 @@ def run_registration_cli(count):
                         log_callback=cli_log,
                     )
                 mark_slot_completed()
+            try:
+                release_icloud_mailbox(cli_log)
+            except Exception as release_exc:
+                cli_log(f"[!] 删除 iCloud 邮箱失败: {release_exc}")
             if controller.should_stop():
                 break
             # 每轮结束只关浏览器，不立刻再开。

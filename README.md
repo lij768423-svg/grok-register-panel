@@ -141,7 +141,7 @@ Windows 不要把 `PLAYWRIGHT_NODEJS_PATH` 指到 `scripts/playwright-node`（�
 
 | 字段 | 说明 |
 |------|------|
-| `email_provider` | `cloudflare` / `duckmail` / `yyds` / `mailnest` / `cloudmail` / `moemail` / `outlook_rt` / `cf_outlook` / `inbucket` |
+| `email_provider` | `cloudflare` / `duckmail` / `yyds` / `mailnest` / `cloudmail` / `moemail` / `outlook_rt` / `cf_outlook` / `inbucket` / `icloud` |
 | `outlook_rt_inventory` | Outlook MSA 库存路径（jsonl：`email`+`refresh_token`；或 `email----rt`） |
 | `outlook_rt_used_path` | 已用邮箱记录（可选；默认 `库存路径.used`） |
 | `outlook_rt_client_id` | 可选 Client ID；默认 Microsoft Authentication Broker 公共客户端 |
@@ -159,6 +159,9 @@ Windows 不要把 `PLAYWRIGHT_NODEJS_PATH` 指到 `scripts/playwright-node`（�
 | `inbucket_api_base` | Inbucket 自建实例根 URL，例如 `http://127.0.0.1:9000`（可用 `INBUCKET_API_BASE` 环境变量） |
 | `inbucket_domain` | Inbucket 收信根域名，可逗号分隔多个轮换，例如 `mail.example.com, box.example.net` |
 | `inbucket_random_levels` | 随机子域级数：`0` 关闭 / `1` / `2` / `1-2` / `1-3`（在区间内随机取级数）；启用需泛解析收信（`*.根域名` 的 MX 指向实例） |
+| `icloud_hme_api_base` | 本地 icloud-hme 地址，例如 `http://127.0.0.1:8081` |
+| `icloud_hme_admin_password` | icloud-hme 管理员密码（至少 8 字符，与 `ICLOUD_HME_ADMIN_PASSWORD` 相同） |
+| `icloud_hme_account_id` | 可选 iCloud 账号 ID；留空由 icloud-hme 自动选择可用账号 |
 | `proxy` | 默认 HTTP 代理，如 `http://127.0.0.1:7890` |
 | `proxies.txt` | 可选的旧版多行代理文件；未配置面板代理池时继续兼容 |
 | `register_workers` | 并发浏览器数（建议先 2～3） |
@@ -336,10 +339,11 @@ python grok_register_ttk.py
 
 ### 邮箱服务与高级域名轮换
 
-- 顶部“邮箱服务”统一配置 `cloudflare`、`duckmail`、`yyds`、`mailnest`、`cloudmail`、`moemail`、`outlook_rt`、`cf_outlook`、`inbucket`
+- 顶部“邮箱服务”统一配置 `cloudflare`、`duckmail`、`yyds`、`mailnest`、`cloudmail`、`moemail`、`outlook_rt`、`cf_outlook`、`inbucket`、`icloud`
 - `outlook_rt` 从本地 jsonl 库存取号（非购买），用 MSA `refresh_token` 刷 Graph 收 xAI 验证码
 - `cf_outlook` 默认通过 `/api/external/accounts/random` 随机获取 `active` 邮箱，再通过 `/api/external/emails` 查询 xAI 验证码；`cf_outlook_inventory` 可选，填写后才使用本地固定邮箱库存；API Key 使用 `X-API-Key` 请求头，不通过 URL 传输
 - `inbucket` 使用自建 [Inbucket](https://github.com/inbucket/inbucket) 实例：填实例地址和收信根域名即可，邮箱即建即用，无需注册 API；根域名可配多个轮换，并可按 `inbucket_random_levels` 叠加随机多级子域（需泛解析收信）
+- `icloud` 对接本地 [icloud-hme](https://github.com/moliango/icloud-hme)：创建 Hide My Email 别名收 xAI 验证码；每次注册结束（成功或失败）都会删除该别名
 - 切换服务商时只显示该服务实际支持的字段；保存后新的注册任务读取 `config.json`
 - 已保存的 API Key、JWT 和密码不会通过接口或页面回显；密钥输入留空会保留原值，必须点“清除”并保存才会删除
 - “测试当前提供商”使用表单中的未保存内容做连通性检查，不会改写 `config.json`；`outlook_rt` 刷新成功时会原子保存上游轮换后的 RT，避免库存保留已失效凭据，但不会标记邮箱已用
