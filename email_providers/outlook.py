@@ -1,7 +1,7 @@
 """Outlook/Hotmail 真实邮箱 provider。
 
 账号池行格式: email----password----client_id----refresh_token
-create_mailbox 原子地从池文件取一行（追加到已用文件），并记录 IMAP 基线 UID；
+create_mailbox 加锁领取账号，先保存已用记录再更新待用池，并记录 IMAP 基线 UID；
 wait_for_code 用 refresh_token 换 access token 后走 IMAP XOAUTH2 轮询基线之后的新 x.ai 邮件。
 """
 
@@ -9,19 +9,21 @@ from __future__ import annotations
 
 import email as email_lib
 import email.header
-import fcntl
 import imaplib
-import os
-import re
-import tempfile
+from contextlib import ExitStack, contextmanager
+from pathlib import Path
 from typing import Callable, Optional
 
 import requests as _requests
+
+from secure_files import atomic_write_text, exclusive_file_lock
 
 MS_TOKEN_URL = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token"
 IMAP_HOST = "imap-mail.outlook.com"
 IMAP_PORT = 993
 IMAP_SCOPE = "offline_access https://outlook.office.com/IMAP.AccessAsUser.All"
+DEFAULT_ACCOUNTS_FILE = "keys/outlook_pending.txt"
+DEFAULT_USED_FILE = "keys/outlook_used.txt"
 
 
 def _parse_line(line: str):
@@ -74,14 +76,13 @@ def _imap_login(email_addr: str, access_token: str) -> imaplib.IMAP4_SSL:
 def _max_uid(email_addr: str, access_token: str) -> int:
     conn = _imap_login(email_addr, access_token)
     try:
-        conn.select("INBOX", readonly=True)
-        typ, data = conn.search(None, "ALL")
-        ids = data[0].split() if typ == "OK" and data and data[0] else []
-        if not ids:
-            return 0
-        typ, seq = conn.fetch(ids[-1], "(UID)")
-        m = re.search(rb"UID\s+(\d+)", seq[0] if seq and seq[0] else b"")
-        return int(m.group(1)) if m else 0
+        typ, _ = conn.select("INBOX", readonly=True)
+        if typ != "OK":
+            raise RuntimeError("Outlook 无法打开收件箱")
+        typ, data = conn.uid("SEARCH", None, "ALL")
+        if typ != "OK" or not data or data[0] is None:
+            raise RuntimeError("Outlook 无法读取基线 UID")
+        return max((int(uid) for uid in data[0].split()), default=0)
     finally:
         try:
             conn.logout()
@@ -135,6 +136,10 @@ def _fetch_new_messages(email_addr: str, access_token: str, baseline_uid: int):
         typ, data = conn.uid("SEARCH", None, "UID", f"{baseline_uid + 1}:*")
         uids = data[0].split() if typ == "OK" and data and data[0] else []
         for uid in uids:
+            # IMAP ranges are inclusive in either direction: N:* can return
+            # the last old message when N exceeds the mailbox's highest UID.
+            if int(uid) <= baseline_uid:
+                continue
             typ, fetched = conn.uid("FETCH", uid, "(BODY.PEEK[])")
             if typ != "OK" or not fetched or not fetched[0]:
                 continue
@@ -154,40 +159,71 @@ def _fetch_new_messages(email_addr: str, access_token: str, baseline_uid: int):
     return out
 
 
+def _pool_paths(accounts_file: str, used_file: str) -> tuple[Path, Path]:
+    pending = Path(accounts_file or DEFAULT_ACCOUNTS_FILE).expanduser().resolve()
+    used = Path(used_file or DEFAULT_USED_FILE).expanduser().resolve()
+    if pending == used:
+        raise ValueError("Outlook 待用池和已用记录必须使用不同文件")
+    return pending, used
+
+
+def _read_lines(path: Path) -> list[str]:
+    if not path.exists():
+        return []
+    return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _lines_text(lines: list[str]) -> str:
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
+@contextmanager
+def _pool_lock(pending: Path, used: Path):
+    # Different pending pools may share one used ledger. Lock both files in a
+    # stable order so their read/replace operations cannot overwrite each other.
+    with ExitStack() as stack:
+        for path in sorted({pending, used}):
+            stack.enter_context(exclusive_file_lock(str(path) + ".lock"))
+        yield
+
+
 def create_mailbox(accounts_file: str, used_file: str, proxy: Optional[str] = None,
                    log_callback: Optional[Callable] = None) -> tuple[str, str]:
     """取下一个未用账号，返回 (email, token)。token = pw----client_id----refresh----baseline_uid。"""
-    if not accounts_file or not os.path.exists(accounts_file):
-        raise Exception(f"Outlook 账号池文件不存在: {accounts_file}")
-    lock_path = accounts_file + ".lock"
-    with open(lock_path, "a+") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    pending, used = _pool_paths(accounts_file, used_file)
+    if not pending.is_file():
+        raise Exception(f"Outlook 账号池文件不存在: {pending}")
+    with _pool_lock(pending, used):
+        lines = _read_lines(pending)
+        used_lines = _read_lines(used)
+        used_emails = {line.split("----", 1)[0].strip().lower() for line in used_lines}
+        index = next((i for i, line in enumerate(lines)
+                      if line.split("----", 1)[0].strip().lower() not in used_emails), None)
+        if index is None:
+            raise Exception("Outlook 账号池已耗尽")
+        line = lines[index]
+        parsed = _parse_line(line)
+        if not parsed:
+            raise Exception("Outlook 账号行格式错误（需要四个字段）")
+        rest = lines[:index] + lines[index + 1:]
+        # Persist the credential before removing it from pending. A partial
+        # write/crash cannot lose the row, and the used ledger prevents reuse.
+        atomic_write_text(used, _lines_text(used_lines + [line]))
         try:
-            lines = [ln.strip() for ln in open(accounts_file, encoding="utf-8") if ln.strip() and "----" in ln]
-            if not lines:
-                raise Exception("Outlook 账号池已耗尽")
-            line = lines[0]
-            rest = lines[1:]
-            parsed = _parse_line(line)
-            if not parsed:
-                raise Exception(f"账号行格式错误: {line[:40]}")
-            fd, tmp = tempfile.mkstemp(dir=os.path.dirname(accounts_file) or ".")
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write("\n".join(rest) + ("\n" if rest else ""))
-            os.replace(tmp, accounts_file)
-            with open(used_file, "a", encoding="utf-8") as f:
-                f.write(line + "\n")
-        finally:
-            fcntl.flock(lock, fcntl.LOCK_UN)
+            atomic_write_text(pending, _lines_text(rest))
+        except BaseException:
+            atomic_write_text(used, _lines_text(used_lines))
+            raise
 
     email_addr, password, client_id, refresh_token = parsed
-    baseline = 0
     try:
         token = refresh_access_token(client_id, refresh_token, proxy)
         baseline = _max_uid(email_addr, token)
     except Exception as exc:
-        if log_callback:
-            log_callback(f"Outlook 基线 UID 探测失败（按 0 处理）: {exc}")
+        # Zero is only valid for a confirmed empty inbox. A failed probe must
+        # not make every old OTP eligible for the next signup attempt.
+        release(str(pending), str(used), email_addr, log_callback=log_callback)
+        raise RuntimeError("Outlook 基线 UID 探测失败，未提交邮箱") from exc
     if log_callback:
         log_callback(f"Outlook 取号 {email_addr}（池剩 {len(rest)}，基线 UID={baseline}）")
     return email_addr, f"{password}----{client_id}----{refresh_token}----{baseline}"
@@ -198,34 +234,23 @@ def release(accounts_file: str, used_file: str, email_addr: str,
     """失败未注册的邮箱回收到池尾（从 used 移回 pending 末尾，可重挑）。"""
     if not email_addr:
         return False
-    lock_path = accounts_file + ".lock"
     try:
-        with open(lock_path, "a+") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            try:
-                used_lines = []
-                if os.path.exists(used_file):
-                    used_lines = [ln.strip() for ln in open(used_file, encoding="utf-8") if ln.strip()]
-                target, kept = None, []
-                for ln in used_lines:
-                    if target is None and ln.split("----", 1)[0].strip().lower() == email_addr.lower():
-                        target = ln
-                    else:
-                        kept.append(ln)
-                if target is None:
-                    return False
-                pending_lines = []
-                if os.path.exists(accounts_file):
-                    pending_lines = [ln.strip() for ln in open(accounts_file, encoding="utf-8") if ln.strip()]
-                if not any(ln.split("----", 1)[0].strip().lower() == email_addr.lower() for ln in pending_lines):
-                    pending_lines.append(target)
-                for path_obj, lines in ((accounts_file, pending_lines), (used_file, kept)):
-                    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path_obj) or ".")
-                    with os.fdopen(fd, "w", encoding="utf-8") as f:
-                        f.write("\n".join(lines) + ("\n" if lines else ""))
-                    os.replace(tmp, path_obj)
-            finally:
-                fcntl.flock(lock, fcntl.LOCK_UN)
+        pending, used = _pool_paths(accounts_file, used_file)
+        with _pool_lock(pending, used):
+            used_lines = _read_lines(used)
+            target, kept = None, []
+            for line in used_lines:
+                if target is None and line.split("----", 1)[0].strip().lower() == email_addr.lower():
+                    target = line
+                else:
+                    kept.append(line)
+            if target is None:
+                return False
+            pending_lines = _read_lines(pending)
+            if not any(line.split("----", 1)[0].strip().lower() == email_addr.lower() for line in pending_lines):
+                pending_lines.append(target)
+            atomic_write_text(pending, _lines_text(pending_lines))
+            atomic_write_text(used, _lines_text(kept))
     except Exception as exc:
         if log_callback:
             log_callback(f"[!] Outlook 回收失败 {email_addr}: {exc}")

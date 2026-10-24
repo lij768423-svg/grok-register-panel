@@ -158,7 +158,7 @@ Windows 不要把 `PLAYWRIGHT_NODEJS_PATH` 指到 `scripts/playwright-node`（�
 | `outlook_rt_used_path` | 已用邮箱记录（可选；默认 `库存路径.used`） |
 | `outlook_rt_client_id` | 可选 Client ID；默认 Microsoft Authentication Broker 公共客户端 |
 | `outlook_accounts_file` | Outlook 卡池文件（行格式 `email----password----client_id----refresh_token`；默认 `keys/outlook_pending.txt`） |
-| `outlook_used_file` | 已用记录（默认 `keys/outlook_used.txt`）；注册失败的邮箱自动回收到池尾 |
+| `outlook_used_file` | 已用记录（留空默认 `keys/outlook_used.txt`）；仅建号资料提交前的失败邮箱可自动回收 |
 | `outlook_proxy` | 可选：IMAP 收信独立出口 |
 | `defaultDomains` | 临时邮域名（如二级 CF 域） |
 | `cloudflare_*` / `duckmail_*` 等 | 对应邮箱 API |
@@ -349,7 +349,7 @@ python grok_register_ttk.py
 
 - 顶部“邮箱服务”统一配置 `cloudflare`、`duckmail`、`yyds`、`mailnest`、`cloudmail`、`moemail`、`outlook`、`outlook_rt`、`inbucket`
 - `outlook_rt` 从本地 jsonl 库存取号（非购买），用 MSA `refresh_token` 刷 Graph 收 xAI 验证码
-- `outlook` 直接使用本地卡池文件（每行 `email----password----client_id----refresh_token`），以 XOAUTH2 轮询 Outlook IMAP 收 xAI 验证码；注册失败的邮箱经文件锁回收回待用池尾部可复用，成功注册的移入已用文件
+- `outlook` 直接使用本地卡池文件（每行 `email----password----client_id----refresh_token`），以 XOAUTH2 轮询 Outlook IMAP 收 xAI 验证码；只读取取号时基线之后的新邮件，基线探测失败会归还邮箱并停止该次取号。建号资料提交前的失败邮箱可经跨平台文件锁回收到待用池尾部；进入资料提交后保留已用记录，避免 SSO 或保存失败导致重复注册
 - `inbucket` 使用自建 [Inbucket](https://github.com/inbucket/inbucket) 实例：填实例地址和收信根域名即可，邮箱即建即用，无需注册 API；根域名可配多个轮换，并可按 `inbucket_random_levels` 叠加随机多级子域（需泛解析收信）
 - 切换服务商时只显示该服务实际支持的字段；保存后新的注册任务读取 `config.json`
 - 已保存的 API Key、JWT 和密码不会通过接口或页面回显；密钥输入留空会保留原值，必须点“清除”并保存才会删除

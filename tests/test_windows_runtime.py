@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import stat
+import subprocess
 import sys
 import tempfile
 import time
@@ -119,9 +120,22 @@ def test_windows_process_tree_terminates_descendants():
     assert "target=_read_pipe" in source
 
 
+def test_outlook_pool_and_registration_regressions():
+    # Keep these checks on the existing Windows CI entry point as well as the
+    # full release suite. Separate interpreters isolate provider/config patches.
+    for test_file in ("test_outlook.py", "test_outlook_worker_integration.py"):
+        subprocess.run(
+            [sys.executable, str(ROOT / "tests" / test_file)],
+            cwd=ROOT,
+            check=True,
+            timeout=90,
+        )
+
+
 if __name__ == "__main__":
     test_windows_profile_root_uses_local_app_data()
     test_proxy_ip_validation_is_strict()
     test_account_gap_sleep_is_cancelable()
     test_windows_process_tree_terminates_descendants()
+    test_outlook_pool_and_registration_regressions()
     print("OK windows runtime")

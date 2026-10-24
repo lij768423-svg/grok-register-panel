@@ -4208,6 +4208,7 @@ def run_registration_cli(count):
                 worker_stop = False
                 while i < n and not controller.should_stop() and not worker_stop:
                     email = ""
+                    registration_submitted = False
                     try:
                         delay = reserve_signup_submit_slot()
                         if delay >= 0.5:
@@ -4229,6 +4230,9 @@ def run_registration_cli(count):
                             log_callback=lambda m: cli_log(f"[W{wid+1}] {m}"),
                             cancel_callback=controller.should_stop,
                         )
+                        # From here an account may exist even if the browser,
+                        # SSO polling, or local output later fails. Keep it used.
+                        registration_submitted = True
                         profile = fill_profile_and_submit(
                             log_callback=lambda m: cli_log(f"[W{wid+1}] {m}"),
                             cancel_callback=controller.should_stop,
@@ -4302,7 +4306,7 @@ def run_registration_cli(count):
                             f"[W{wid+1}] [-] 域名拒绝: "
                             f"{redact_sensitive_log_line(str(exc))}"
                         )
-                        if config.get("email_provider") == "outlook" and email:
+                        if config.get("email_provider") == "outlook" and email and not registration_submitted:
                             outlook_provider.release(
                                 config.get("outlook_accounts_file", "keys/outlook_pending.txt"),
                                 config.get("outlook_used_file", "keys/outlook_used.txt"),
@@ -4330,7 +4334,7 @@ def run_registration_cli(count):
                                 f"[W{wid+1}] [-] 卡住跳过: "
                                 f"{redact_sensitive_log_line(str(exc))}"
                             )
-                            if config.get("email_provider") == "outlook" and email:
+                            if config.get("email_provider") == "outlook" and email and not registration_submitted:
                                 outlook_provider.release(
                                     config.get("outlook_accounts_file", "keys/outlook_pending.txt"),
                                     config.get("outlook_used_file", "keys/outlook_used.txt"),
@@ -4400,7 +4404,7 @@ def run_registration_cli(count):
                             f"[W{wid+1}] [-] 失败 [{FAIL_LABELS.get(kind, kind)}]: "
                             f"{redact_sensitive_log_line(str(exc))}"
                         )
-                        if config.get("email_provider") == "outlook" and email:
+                        if config.get("email_provider") == "outlook" and email and not registration_submitted:
                             outlook_provider.release(
                                 config.get("outlook_accounts_file", "keys/outlook_pending.txt"),
                                 config.get("outlook_used_file", "keys/outlook_used.txt"),
