@@ -10,6 +10,7 @@ from __future__ import annotations
 import email as email_lib
 import email.header
 import imaplib
+import sys
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Callable, Optional
@@ -264,7 +265,11 @@ def release(accounts_file: str, used_file: str, email_addr: str,
     if log_callback:
         log_callback(f"[*] Outlook 失败回收 {email_addr} 回池尾")
     else:
-        print(f"[*] Outlook 失败回收 {email_addr} 回池尾", flush=True)
+        message = f"[*] Outlook 失败回收 {email_addr} 回池尾"
+        encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+        # The pool update already succeeded; a legacy Windows code page must
+        # not turn its informational log into a failed registration attempt.
+        print(message.encode(encoding, errors="backslashreplace").decode(encoding), flush=True)
     return True
 
 

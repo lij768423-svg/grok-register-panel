@@ -1,6 +1,7 @@
 """Offline regression checks for the Outlook IMAP pool provider."""
 from __future__ import annotations
 
+import io
 import subprocess
 import sys
 import tempfile
@@ -55,6 +56,17 @@ class OutlookPoolTests(unittest.TestCase):
         self.assertEqual(self.pending.read_text(), account_line() + "\n")
         self.assertFalse(self.used.exists())
         self.assertEqual(self.take()[0], "review-0@example.test")
+
+    def test_successful_release_survives_legacy_console_encoding(self):
+        address, _ = self.take()
+        output = io.BytesIO()
+        console = io.TextIOWrapper(output, encoding="cp1252")
+        with patch.object(sys, "stdout", console):
+            self.assertTrue(outlook.release(str(self.pending), str(self.used), address))
+        console.flush()
+        self.assertIn(address, output.getvalue().decode("cp1252"))
+        self.assertEqual(self.pending.read_text(), account_line() + "\n")
+        self.assertEqual(self.used.read_text(), "")
 
     def test_failed_pending_write_restores_used_ledger(self):
         self.used.write_text(account_line(99) + "\n", encoding="utf-8")
