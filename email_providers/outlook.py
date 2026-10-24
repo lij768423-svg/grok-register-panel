@@ -212,7 +212,13 @@ def create_mailbox(accounts_file: str, used_file: str, proxy: Optional[str] = No
         try:
             atomic_write_text(pending, _lines_text(rest))
         except BaseException:
-            atomic_write_text(used, _lines_text(used_lines))
+            # A replace may have completed before an interruption/error was
+            # reported. Only undo the used entry if pending still has the row.
+            try:
+                if line in _read_lines(pending):
+                    atomic_write_text(used, _lines_text(used_lines))
+            except Exception:
+                pass  # Keep the durable used copy if rollback itself fails.
             raise
 
     email_addr, password, client_id, refresh_token = parsed

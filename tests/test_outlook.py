@@ -77,6 +77,21 @@ class OutlookPoolTests(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "已耗尽"):
             self.take()
 
+    def test_pending_replace_then_error_keeps_durable_used_copy(self):
+        original = outlook.atomic_write_text
+        def fail_after_replace(path, text):
+            result = original(path, text)
+            if path == self.pending:
+                raise OSError("simulated error after replace")
+            return result
+        with patch.object(outlook, "atomic_write_text", side_effect=fail_after_replace):
+            with self.assertRaises(OSError):
+                self.take()
+        self.assertEqual(self.pending.read_text(), "")
+        self.assertEqual(self.used.read_text(), account_line() + "\n")
+        self.assertTrue(outlook.release(str(self.pending), str(self.used), "review-0@example.test"))
+        self.assertEqual(self.pending.read_text(), account_line() + "\n")
+
     def test_failed_release_cannot_make_used_account_claimable(self):
         address, _ = self.take()
         original = outlook.atomic_write_text
