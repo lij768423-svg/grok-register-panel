@@ -38,6 +38,7 @@ from email_providers import duckmail as duckmail_provider
 from email_providers import inbucket as inbucket_provider
 from email_providers import mailnest as mailnest_provider
 from email_providers import moemail as moemail_provider
+from email_providers import outlook as outlook_provider
 from email_providers import outlook_rt as outlook_rt_provider
 from email_providers import yyds as yyds_provider
 from email_providers.common import extract_verification_code as _extract_code
@@ -247,6 +248,9 @@ DEFAULT_CONFIG = {
     "outlook_rt_inventory": "",
     "outlook_rt_used_path": "",
     "outlook_rt_client_id": outlook_rt_provider.DEFAULT_CLIENT_ID,
+    "outlook_accounts_file": "keys/outlook_pending.txt",
+    "outlook_used_file": "keys/outlook_used.txt",
+    "outlook_proxy": "",
     # 账号间注册间隔（秒），0=不等待。填一个整数=N秒固定等待，填区间"60-120"=随机等待
     "account_interval": "60-120",
 }
@@ -1913,6 +1917,12 @@ def get_email_and_token(api_key=None):
         return mailnest_buy_email(), "_"
     if provider == "inbucket":
         return inbucket_get_email_and_token(domain=managed_domain)
+    if provider == "outlook":
+        return outlook_provider.create_mailbox(
+            config.get("outlook_accounts_file", "keys/outlook_pending.txt"),
+            config.get("outlook_used_file", "keys/outlook_used.txt"),
+            proxy=config.get("outlook_proxy") or None,
+        )
     if provider == "outlook_rt":
         return outlook_rt_take_mailbox()
     return duckmail_provider.create_mailbox(
@@ -2053,6 +2063,20 @@ def get_oai_code(
             poll_interval=poll_interval,
             log_callback=log_callback,
             cancel_callback=cancel_callback,
+            resend_callback=resend_callback,
+        )
+    if provider == "outlook":
+        return outlook_provider.wait_for_code(
+            dev_token,
+            email,
+            timeout=max(int(timeout or 0), 240),
+            poll_interval=max(int(poll_interval or 0), 5),
+            extract_code=extract_verification_code,
+            raise_if_cancelled=raise_if_cancelled,
+            sleep_with_cancel=sleep_with_cancel,
+            log_callback=log_callback,
+            cancel_callback=cancel_callback,
+            proxy=config.get("outlook_proxy") or None,
             resend_callback=resend_callback,
         )
     if provider == "outlook_rt":
@@ -2669,6 +2693,15 @@ def _wire_runtime_modules():
     )
     _rf.configure(
         get_email_and_token=get_email_and_token,
+        release_email=(
+            lambda addr: outlook_provider.release(
+                config.get("outlook_accounts_file", "keys/outlook_pending.txt"),
+                config.get("outlook_used_file", "keys/outlook_used.txt"),
+                addr,
+            )
+        )
+        if config.get("email_provider") == "outlook"
+        else None,
         get_oai_code=get_oai_code,
         on_email_accepted=_record_email_domain_accepted,
         on_email_domain_rejected=_record_email_domain_rejected,
@@ -2768,6 +2801,7 @@ class GrokRegisterGUI:
             config_frame,
             self.email_provider_var,
             [
+                "outlook",
                 "outlook_rt",
                 "duckmail",
                 "mailnest",
@@ -3046,6 +3080,17 @@ class GrokRegisterGUI:
                 or outlook_rt_provider.DEFAULT_CLIENT_ID
             )
         )
+        self.outlook_accounts_file_var = tk.StringVar(
+            value=str(
+                config.get("outlook_accounts_file") or "keys/outlook_pending.txt"
+            )
+        )
+        self.outlook_used_file_var = tk.StringVar(
+            value=str(config.get("outlook_used_file") or "keys/outlook_used.txt")
+        )
+        self.outlook_proxy_var = tk.StringVar(
+            value=str(config.get("outlook_proxy", "") or "")
+        )
         self._outlook_rt_widgets = [
             p_label(0, 0, "库存文件:"),
             p_field(
@@ -3092,6 +3137,52 @@ class GrokRegisterGUI:
             ),
         ]
 
+        self._outlook_widgets = [
+            p_label(0, 0, "账号池文件:"),
+            p_field(
+                tk_entry(
+                    self.provider_frame,
+                    textvariable=self.outlook_accounts_file_var,
+                    width=52,
+                ),
+                0,
+                1,
+                columnspan=3,
+            ),
+            p_label(1, 0, "已用记录（可选）:"),
+            p_field(
+                tk_entry(
+                    self.provider_frame,
+                    textvariable=self.outlook_used_file_var,
+                    width=34,
+                ),
+                1,
+                1,
+            ),
+            p_label(1, 2, "Outlook 代理（可选）:"),
+            p_field(
+                tk_entry(
+                    self.provider_frame,
+                    textvariable=self.outlook_proxy_var,
+                    width=34,
+                ),
+                1,
+                3,
+            ),
+            p_label(2, 0, "说明:"),
+            p_field(
+                tk_label(
+                    self.provider_frame,
+                    text="行格式 email----password----client_id----refresh_token；失败未注册的邮箱自动回池尾",
+                    bg=UI_PANEL_BG,
+                ),
+                2,
+                1,
+                columnspan=3,
+                sticky=tk.W,
+            ),
+        ]
+
         self._provider_widget_groups = {
             "duckmail": self._duckmail_widgets,
             "cloudflare": self._cloudflare_widgets,
@@ -3099,6 +3190,7 @@ class GrokRegisterGUI:
             "mailnest": self._mailnest_widgets,
             "cloudmail": self._cloudmail_widgets,
             "moemail": self._moemail_widgets,
+            "outlook": self._outlook_widgets,
             "outlook_rt": self._outlook_rt_widgets,
         }
 
@@ -3287,6 +3379,7 @@ class GrokRegisterGUI:
             "mailnest": "MailNest 配置",
             "cloudmail": "CloudMail 配置",
             "moemail": "MoeMail 配置",
+            "outlook": "Outlook 卡池配置（含失败回收）",
             "outlook_rt": "Outlook RT 库存配置（推荐）",
         }
         self.provider_frame.configure(text=titles.get(provider, "邮箱服务商配置"))
@@ -3389,6 +3482,9 @@ class GrokRegisterGUI:
                 self.outlook_rt_client_id_var.get().strip()
                 or outlook_rt_provider.DEFAULT_CLIENT_ID
             )
+            config["outlook_accounts_file"] = self.outlook_accounts_file_var.get().strip()
+            config["outlook_used_file"] = self.outlook_used_file_var.get().strip()
+            config["outlook_proxy"] = self.outlook_proxy_var.get().strip()
             config["cpa_auto_add"] = bool(self.cpa_auto_add_var.get())
             config["quality_probe_on_register"] = bool(self.quality_probe_on_register_var.get())
             _mode_text = str(self.cpa_token_mode_var.get()).strip()
@@ -3512,6 +3608,9 @@ class GrokRegisterGUI:
             self.outlook_rt_client_id_var.get().strip()
             or outlook_rt_provider.DEFAULT_CLIENT_ID
         )
+        config["outlook_accounts_file"] = self.outlook_accounts_file_var.get().strip()
+        config["outlook_used_file"] = self.outlook_used_file_var.get().strip()
+        config["outlook_proxy"] = self.outlook_proxy_var.get().strip()
         config["cpa_auto_add"] = bool(self.cpa_auto_add_var.get())
         config["quality_probe_on_register"] = bool(self.quality_probe_on_register_var.get())
         _mode_text = str(self.cpa_token_mode_var.get()).strip()
@@ -3541,6 +3640,13 @@ class GrokRegisterGUI:
         if config["email_provider"] == "mailnest" and not config["mailnest_api_key"]:
             self.log("[!] MailNest 模式需要先填写 MailNest API Key")
             return
+        if config["email_provider"] == "outlook":
+            pool_file = (
+                str(config.get("outlook_accounts_file") or "keys/outlook_pending.txt")
+            )
+            if not os.path.exists(pool_file):
+                self.log(f"[!] Outlook 模式需要账号池文件: {pool_file}")
+                return
         if config["email_provider"] == "outlook_rt":
             inv = get_outlook_rt_inventory()
             if not inv:
@@ -4196,6 +4302,13 @@ def run_registration_cli(count):
                             f"[W{wid+1}] [-] 域名拒绝: "
                             f"{redact_sensitive_log_line(str(exc))}"
                         )
+                        if config.get("email_provider") == "outlook" and email:
+                            outlook_provider.release(
+                                config.get("outlook_accounts_file", "keys/outlook_pending.txt"),
+                                config.get("outlook_used_file", "keys/outlook_used.txt"),
+                                email,
+                                log_callback=lambda m: cli_log(f"[W{wid+1}] {m}"),
+                            )
                         record_register_result(
                             "fail",
                             email if email else "",
@@ -4217,6 +4330,13 @@ def run_registration_cli(count):
                                 f"[W{wid+1}] [-] 卡住跳过: "
                                 f"{redact_sensitive_log_line(str(exc))}"
                             )
+                            if config.get("email_provider") == "outlook" and email:
+                                outlook_provider.release(
+                                    config.get("outlook_accounts_file", "keys/outlook_pending.txt"),
+                                    config.get("outlook_used_file", "keys/outlook_used.txt"),
+                                    email,
+                                    log_callback=lambda m: cli_log(f"[W{wid+1}] {m}"),
+                                )
                             mark_slot_completed()
                     except Exception as exc:
                         msg = str(exc)
@@ -4280,6 +4400,13 @@ def run_registration_cli(count):
                             f"[W{wid+1}] [-] 失败 [{FAIL_LABELS.get(kind, kind)}]: "
                             f"{redact_sensitive_log_line(str(exc))}"
                         )
+                        if config.get("email_provider") == "outlook" and email:
+                            outlook_provider.release(
+                                config.get("outlook_accounts_file", "keys/outlook_pending.txt"),
+                                config.get("outlook_used_file", "keys/outlook_used.txt"),
+                                email,
+                                log_callback=lambda m: cli_log(f"[W{wid+1}] {m}"),
+                            )
                         _bf = None
                         _rk = None
                         if kind == FAIL_RISK:

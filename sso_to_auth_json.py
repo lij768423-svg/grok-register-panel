@@ -86,6 +86,13 @@ REDIRECT_URI = "http://127.0.0.1:56121/callback"
 GROK_REFERRER = "grok-build"
 GROK_PLAN = "generic"
 GROK_VERSION = "0.2.93"
+# x.ai 2026-10-22 起：10-22 之后注册的账号 chat/completions 要求
+# x-grok-client-version >= 1.0.13，低版本报 "Grok CLI version outdated"。
+# token 交换链路仍走 GROK_VERSION，不受影响。可用 GROK_CLIENT_VERSION 覆盖。
+GROK_CLIENT_VERSION = (os.environ.get("GROK_CLIENT_VERSION") or "1.0.13").strip()
+GROK_CHAT_UA = (
+    f"grok-pager/{GROK_CLIENT_VERSION} grok-shell/{GROK_CLIENT_VERSION} (linux; x86_64)"
+)
 GROK_TOKEN_UA = f"grok-pager/{GROK_VERSION} grok-shell/{GROK_VERSION} (linux; x86_64)"
 DEFAULT_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -119,11 +126,11 @@ _SCRIPT_SRC_RE = re.compile(r'src=["\']([^"\']+)["\']', re.I)
 CPA_TOKEN_ENDPOINT = f"{OIDC_ISSUER}/oauth2/token"
 CPA_GROK_BASE_URL = "https://cli-chat-proxy.grok.com/v1"
 CPA_GROK_HEADERS = {
-    "User-Agent": GROK_TOKEN_UA,
+    "User-Agent": GROK_CHAT_UA,
     "X-XAI-Token-Auth": "xai-grok-cli",
     "x-authenticateresponse": "authenticate-response",
     "x-grok-client-identifier": "grok-pager",
-    "x-grok-client-version": GROK_VERSION,
+    "x-grok-client-version": GROK_CLIENT_VERSION,
 }
 CPA_PROBE_MODEL = "grok-4.5"
 CPA_PROBE_URL = f"{CPA_GROK_BASE_URL}/responses"

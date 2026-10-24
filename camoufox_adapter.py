@@ -360,6 +360,9 @@ class CamoufoxPage:
 
     # ── 导航 ──
     def get(self, url: str, **kw):
+        # load 事件要等全部第三方资源（Turnstile/Castle/字体），住宅出口下常挂
+        # 60s goto 超时；后续流程都是轮询元素，domcontentloaded 足够。
+        kw.setdefault("wait_until", "domcontentloaded")
         self._page.goto(url, **kw)
 
     def back(self):
