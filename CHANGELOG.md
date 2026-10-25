@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.6.1 - 2026-10-25
+
+### Fixed
+
+- 静态资源缓存不再拦截 JavaScript，也不再拦截整段 `/_next/static/`。注册页脚本留在网络上加载。只缓存 CSS、字体和图片。
+- 发码成功后的 “Verify your email” 页面按验证码已发送处理，不再当成空白页刷新掉。
+
+### Verified
+
+- home-serve 上 `GROK_STATIC_ASSET_CACHE=1` 的 6 号批次：`成功 6 | 失败 0`。六个邮箱都收到验证码、拿到 SSO，并写成 `status=ok`。空白页失败为 0，缓存命中 52、未命中 0。
+
 ## 0.6.0 - 2026-10-24
 
 ### Added

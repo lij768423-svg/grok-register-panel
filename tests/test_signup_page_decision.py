@@ -1,5 +1,10 @@
 """Decisions that choose blank-reload vs wait, and which requests the cache may touch."""
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import register_flow
 import static_asset_cache
 from signup_decisions import (
@@ -197,3 +202,11 @@ def test_email_submit_waits_for_turnstile_only_when_the_widget_is_present():
     assert email_submit_needs_turnstile(0, True) is True
     assert register_flow.email_submit_needs_turnstile(0, False) is False
     assert register_flow.email_submit_needs_turnstile(80, True) is False
+
+
+if __name__ == "__main__":
+    names = sorted(name for name in globals() if name.startswith("test_"))
+    for name in names:
+        globals()[name]()
+        print("ok", name)
+    print("OK signup page decisions")

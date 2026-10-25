@@ -22,6 +22,7 @@ tests=(
   tests/test_bfs_ops.py
   tests/test_bfs_worker_integration.py
   tests/test_static_asset_cache.py
+  tests/test_signup_page_decision.py
   tests/test_batch_traffic.py
   tests/test_retry_policy.py
   tests/test_monitor_http.py
@@ -65,6 +66,7 @@ done
   webui/sso_state_ops.py \
   webui/quality_ops.py \
   static_asset_cache.py \
+  signup_decisions.py \
   batch_traffic.py \
   retry_policy.py \
   run_batch_headless_static_cache.py \

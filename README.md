@@ -579,6 +579,7 @@ A: 在控制台使用“账号补录”。待处理模式成功后自动出队�
 
 | 提交方向 | 内容 |
 |----------|------|
+| 0.6.1 静态缓存可注册 | 缓存只保留 CSS、字体和图片；注册脚本不再从磁盘重放。带缓存的 6 号批次 6/6 `status=ok` |
 | 0.6.0 Outlook 卡池与稳定性 | IMAP 收信、注册阶段回收保护、Windows 文件锁与日志兼容、CPA chat 版本头 `1.0.13`；降智只按 thinking 判定 |
 | 0.5.0 降智测试 | 短题（时钟夹角）+ 见到 thinking 掐流；`quality_probe_on_register` 默认关 |
 | 面板鉴权 | `MONITOR_TOKEN` + Bearer；UI 内 Token 输入；CORS 不开放 `*` |
