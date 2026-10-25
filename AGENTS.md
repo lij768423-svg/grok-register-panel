@@ -111,7 +111,10 @@ Before deployment also run:
 
 Add or update a focused test under `tests/` when behavior changes. The release
 script intentionally uses direct Python test files, `compileall`, shell syntax
-checks, and `git diff --check`; do not assume pytest is required.
+checks, and `git diff --check`; do not assume pytest is required. Test files are
+plain `test_*` functions with a `__main__` block, so `python -m unittest` finds
+nothing — run them as scripts or with `python -m pytest tests`. Tests that import
+`grok_register_ttk` need a Python with tkinter and skip themselves otherwise.
 
 For UI changes, review desktop and mobile layouts in light and dark themes.
 Verify that operational API calls still require authentication and that no

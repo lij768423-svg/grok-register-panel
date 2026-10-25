@@ -8,7 +8,17 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import connectivity
-import grok_register_ttk
+try:
+    import grok_register_ttk
+except ModuleNotFoundError as exc:  # 无 tkinter 的解释器（如 Homebrew Python）
+    if exc.name not in {"tkinter", "_tkinter"}:
+        raise
+    if "pytest" in sys.modules:
+        import pytest
+
+        pytest.skip("当前 Python 缺少 tkinter，跳过依赖 grok_register_ttk 的测试", allow_module_level=True)
+    print("SKIP: 当前 Python 缺少 tkinter，跳过依赖 grok_register_ttk 的测试")
+    sys.exit(0)
 import retry_policy
 
 

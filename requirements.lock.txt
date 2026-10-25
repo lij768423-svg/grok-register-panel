@@ -11,7 +11,7 @@ cffi==2.1.0
 charset-normalizer==3.4.9
 click==8.4.2
 cssselect==1.5.0
-curl_cffi==0.13.0
+curl_cffi==0.15.0
 DrissionGet==1.2.1
 DrissionPage==4.1.1.4
 DrissionRecord==2.0.1
