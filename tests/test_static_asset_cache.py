@@ -47,8 +47,9 @@ class FakeContext:
         self.handlers = []
 
     def route(self, pattern, handler):
-        assert pattern == "**/*"
-        self.handlers.append(handler)
+        assert pattern in cache.static_route_globs()
+        assert not pattern.endswith("*.js")
+        self.handlers.append((pattern, handler))
 
 
 def main():
@@ -58,12 +59,14 @@ def main():
         with tempfile.TemporaryDirectory(prefix="grok-static-cache-test-") as root:
             os.environ["GROK_STATIC_ASSET_CACHE"] = "1"
             os.environ["GROK_STATIC_CACHE_DIR"] = root
-            asset = "https://assets.example.test/_next/static/app.js?v=2#fragment"
+            asset = "https://assets.example.test/_next/static/app.css?v=2#fragment"
+            script = "https://assets.example.test/_next/static/app.js?v=2#fragment"
             challenge = "https://challenges.cloudflare.com/turnstile/v0/api.js"
             assert cache.cache_enabled()
-            assert cache.is_static_request(asset, "script", "GET")
+            assert not cache.is_static_request(script, "script", "GET")
+            assert cache.is_static_request(asset, "stylesheet", "GET")
             assert not cache.is_static_request(challenge, "script", "GET")
-            assert not cache.is_static_request(asset, "script", "POST")
+            assert not cache.is_static_request(asset, "stylesheet", "POST")
             assert not cache.is_static_request(
                 "https://api.example.test/account/avatar", "image", "GET"
             )
@@ -96,15 +99,21 @@ def main():
             context = FakeContext()
             assert cache.attach_static_cache(context)
             assert cache.attach_static_cache(context)
-            assert len(context.handlers) == 1
-            handler = context.handlers[0]
+            assert len(context.handlers) == len(cache.static_route_globs())
+            handler = context.handlers[0][1]
 
-            first = FakeRoute(FakeRequest("https://cdn.example.test/app-v3.js"))
+            skipped = FakeRoute(FakeRequest("https://cdn.example.test/app-v3.js", "script"))
+            handler(skipped)
+            assert skipped.fetch_count == 0
+            assert skipped.fulfilled is None
+            assert skipped.continued is True
+
+            first = FakeRoute(FakeRequest("https://cdn.example.test/app-v3.css", "stylesheet"))
             handler(first)
             assert first.fetch_count == 1
             assert first.fulfilled["headers"]["x-grok-static-cache"] == "MISS"
 
-            second = FakeRoute(FakeRequest("https://cdn.example.test/app-v3.js"))
+            second = FakeRoute(FakeRequest("https://cdn.example.test/app-v3.css", "stylesheet"))
             handler(second)
             assert second.fetch_count == 0
             assert second.fulfilled["headers"]["x-grok-static-cache"] == "HIT"

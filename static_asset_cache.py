@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Shared disk cache for browser static assets (JS/CSS/font/image).
+"""Shared disk cache for browser static assets (CSS/font/image).
 
 Opt-in only. Used by run_batch_headless_static_cache.py — does not change the
 default run_batch_headless / browser_session path.
@@ -158,10 +158,16 @@ def is_static_request(url: str, resource_type: str = "", method: str = "GET") ->
     for skip in _SKIP_HOST_SUBSTR:
         if skip in low:
             return False
-    rt = str(resource_type or "").lower()
-    if rt in {"script", "stylesheet", "font"}:
-        return True
     ext = _ext_of(u)
+    # Signup scripts build the Castle token. Replaying them from disk
+    # correlated with HTTP 400 email-signup-unavailable; leave them live.
+    if ext in {".js", ".mjs", ".cjs"}:
+        return False
+    rt = str(resource_type or "").lower()
+    if rt == "script":
+        return False
+    if rt in {"stylesheet", "font"}:
+        return True
     if ext in _STATIC_EXT:
         return True
     # common static path markers without clear extension
@@ -170,7 +176,7 @@ def is_static_request(url: str, resource_type: str = "", method: str = "GET") ->
     except Exception:
         path = low
     if "/_next/static/" in path or "/static/" in path or "/assets/" in path:
-        if rt in ("", "other", "script", "stylesheet", "image", "font"):
+        if rt in ("", "other", "stylesheet", "image", "font"):
             return True
     return False
 
@@ -353,6 +359,29 @@ def _fulfill_headers(meta_headers: dict) -> dict:
     return out
 
 
+def static_route_globs() -> tuple[str, ...]:
+    """Playwright route globs for immutable assets only.
+
+    Do not use ``**/*``. A catch-all handler also sees the signup document,
+    XHR, and fetch calls; stalling those leaves ``inputs=none``.
+    """
+    return (
+        "**/*.css",
+        "**/*.woff",
+        "**/*.woff2",
+        "**/*.ttf",
+        "**/*.otf",
+        "**/*.png",
+        "**/*.jpg",
+        "**/*.jpeg",
+        "**/*.gif",
+        "**/*.svg",
+        "**/*.webp",
+        "**/*.ico",
+        "**/*.avif",
+    )
+
+
 def attach_static_cache(context, log_callback: Optional[LogFn] = None) -> bool:
     """Install route handler on a Playwright/Camoufox BrowserContext.
 
@@ -443,7 +472,8 @@ def attach_static_cache(context, log_callback: Optional[LogFn] = None) -> bool:
                 pass
 
     try:
-        context.route("**/*", _handler)
+        for glob in static_route_globs():
+            context.route(glob, _handler)
     except Exception as exc:
         with _install_lock:
             try:

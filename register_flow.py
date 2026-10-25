@@ -12,6 +12,17 @@ from typing import Any, Dict
 
 from playwright._impl._errors import TargetClosedError as PageDisconnectedError
 
+from signup_decisions import (
+    email_submit_deny_keywords,
+    email_submit_needs_turnstile,
+    fill_gave_up_message,
+    label_matches_deny,
+    native_type_confirmed,
+    should_reload_blank,
+    signup_block_reason,
+    signup_code_sent,
+    signup_probe_kind,
+)
 from browser_session import (
     active_browser,
     active_page,
@@ -147,7 +158,7 @@ def _native_click_action(keywords, deny_keywords=()) -> str:
                 continue
             label = _native_label(element)
             compact = re.sub(r"\s+", "", label).lower()
-            if not compact or any(item in compact for item in denied):
+            if label_matches_deny(label, deny_keywords):
                 continue
             score = max((len(item) for item in keys if item and item in compact), default=0)
             if score:
@@ -184,8 +195,7 @@ def _native_type_element(element, value: str, per_char: bool = True) -> bool:
             current = str(element.property("value") or "")
         except Exception:
             current = ""
-        # 某些 React 控件异步更新 property；调用成功且无法读取值时交给页面推进检查。
-        return not current or current.strip() == text.strip()
+        return native_type_confirmed(current, text)
     except Exception:
         return False
 
@@ -876,6 +886,13 @@ function textOf(node) {
     ].filter(Boolean).join(' ').replace(/\\s+/g, ' ').trim().toLowerCase();
 }
 // 1. 出现验证码输入框 => 已前进
+const body = ((document.body && document.body.innerText) || '').toLowerCase();
+if (
+    body.includes('verify your email') ||
+    body.includes('one time security code') ||
+    body.includes('one-time security code') ||
+    body.includes('emailed a one time')
+) return true;
 const codeInput = Array.from(document.querySelectorAll('input')).find((node) => {
     if (!isVisible(node)) return false;
     const type = (node.getAttribute('type') || '').toLowerCase();
@@ -1175,6 +1192,7 @@ return candidates[0].text || true;
                 # 日语
                 "登録",
             ),
+            deny_keywords=email_submit_deny_keywords(),
         )
         if not clicked:
             clicked = page.run_js(
