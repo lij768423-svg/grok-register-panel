@@ -603,6 +603,9 @@ A: 在控制台使用“账号补录”。待处理模式成功后自动出队�
 ## 相关项目
 
 - [grok2api-egress-enhancements](https://github.com/lij768423-svg/grok2api-egress-enhancements) — grok2api 出口增强补丁：固定代理快速恢复 + 出口质量守护（被动 Token/s 熔断、硬阈值隔离、最低健康节点、管理面板）
+- [meshatlas](https://github.com/lij768423-svg/meshatlas) — Tailscale tailnet 实时地图：节点位置、直连 / DERP 路径、延迟矩阵
+- [ai-quota](https://github.com/lij768423-svg/ai-quota) — 一页看 Claude、Codex、Grok、Antigravity 的订阅额度
+- 作者的其他项目见 [GitHub 主页](https://github.com/lij768423-svg) 和 [ljj.world](https://ljj.world)，想看新项目可以在主页点 Follow
 
 ## 友情链接
 
